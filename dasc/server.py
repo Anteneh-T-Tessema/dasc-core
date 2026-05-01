@@ -13,8 +13,13 @@ from .persistence import PostgresLedger
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+from .persistence import PostgresLedger
+from .webhooks import NotificationManager
 
 app = FastAPI(title="DASC Control Plane")
+
+# Notification Configuration
+notifier = NotificationManager(os.getenv("SLACK_WEBHOOK_URL"))
 
 # Security Configuration
 API_KEY_NAME = "X-API-KEY"
@@ -83,6 +88,11 @@ def evaluate_intent(intent: Intent):
     to the centralized DASC Safety Boundary.
     """
     decision = kernel.evaluate(intent)
+    
+    # Trigger active alerting for sensitive events
+    if decision.status != "COMMIT":
+        notifier.notify(intent, decision)
+        
     return decision
 
 @app.get("/stats", dependencies=[Depends(get_api_key)])
