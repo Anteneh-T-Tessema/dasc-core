@@ -10,7 +10,21 @@ from .schemas import Decision, Intent
 import os
 from .persistence import PostgresLedger
 
+from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
+
 app = FastAPI(title="DASC Control Plane")
+
+# Security Configuration
+API_KEY_NAME = "X-API-KEY"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+MASTER_API_KEY = os.getenv("DASC_MASTER_KEY", "dasc-dev-key-123")
+
+def get_api_key(api_key: str = Security(api_key_header)):
+    if api_key != MASTER_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API Key")
+    return api_key
 
 # Database Selection Logic
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -29,18 +43,18 @@ class HITLApproval(BaseModel):
     approver_id: str
     comments: Optional[str] = None
 
-@app.get("/ledger")
+@app.get("/ledger", dependencies=[Depends(get_api_key)])
 def get_ledger(limit: int = 50):
     """Returns the bitemporal ledger history."""
     return ledger.get_history()[:limit]
 
-@app.get("/integrity")
+@app.get("/integrity", dependencies=[Depends(get_api_key)])
 def check_integrity():
     """Verifies the hash-chain integrity of the ledger."""
     is_intact = ledger.verify_integrity()
     return {"status": "intact" if is_intact else "compromised", "valid": is_intact}
 
-@app.post("/approve")
+@app.post("/approve", dependencies=[Depends(get_api_key)])
 def approve_intent(approval: HITLApproval):
     """
     Manually approves or rejects an escalated intent.
@@ -62,7 +76,7 @@ def approve_intent(approval: HITLApproval):
     
     return {"status": "success", "new_status": new_status}
 
-@app.post("/evaluate", response_model=Decision)
+@app.post("/evaluate", response_model=Decision, dependencies=[Depends(get_api_key)])
 def evaluate_intent(intent: Intent):
     """
     Remote endpoint for distributed agents to submit intents 
@@ -71,7 +85,7 @@ def evaluate_intent(intent: Intent):
     decision = kernel.evaluate(intent)
     return decision
 
-@app.get("/stats")
+@app.get("/stats", dependencies=[Depends(get_api_key)])
 def get_stats():
     """Returns summary statistics for the dashboard."""
     history = ledger.get_history()

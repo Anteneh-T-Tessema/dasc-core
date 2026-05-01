@@ -27,4 +27,5 @@ class Decision(BaseModel):
     intent_id: str
     status: str # COMMIT, REJECT, ESCALATE
     reason_codes: List[str] = []
+    suggestions: List[str] = [] # Actionable advice for recovery
     timestamp: str = Field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
