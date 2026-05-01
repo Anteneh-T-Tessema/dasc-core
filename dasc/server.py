@@ -7,8 +7,20 @@ from .kernel import Kernel
 from .ledger import BitemporalLedger
 from .schemas import Decision, Intent
 
+import os
+from .persistence import PostgresLedger
+
 app = FastAPI(title="DASC Control Plane")
-ledger = BitemporalLedger()
+
+# Database Selection Logic
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    ledger = PostgresLedger(DATABASE_URL)
+    print("[DASC] Using PostgreSQL Ledger")
+else:
+    ledger = BitemporalLedger()
+    print("[DASC] Using Local SQLite Ledger")
+
 kernel = Kernel()
 
 class HITLApproval(BaseModel):
