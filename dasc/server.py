@@ -62,6 +62,15 @@ def approve_intent(approval: HITLApproval):
     
     return {"status": "success", "new_status": new_status}
 
+@app.post("/evaluate", response_model=Decision)
+def evaluate_intent(intent: Intent):
+    """
+    Remote endpoint for distributed agents to submit intents 
+    to the centralized DASC Safety Boundary.
+    """
+    decision = kernel.evaluate(intent)
+    return decision
+
 @app.get("/stats")
 def get_stats():
     """Returns summary statistics for the dashboard."""

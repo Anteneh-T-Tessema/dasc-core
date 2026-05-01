@@ -11,6 +11,7 @@ class Evidence(BaseModel):
 class Intent(BaseModel):
     intent_id: str
     actor_agent: str
+    namespace: str = Field(default="default", description="Isolation boundary for multi-tenant support")
     action_type: str
     target_artifact: str
     risk_tier: int = Field(default=1, ge=1, le=4)

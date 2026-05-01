@@ -11,6 +11,7 @@ Base = declarative_base()
 class DecisionRecord(Base):
     __tablename__ = 'dasc_decisions'
     id = Column(Integer, primary_key=True)
+    namespace = Column(String(50), default="default", index=True)
     intent_id = Column(String(50))
     actor_agent = Column(String(100))
     status = Column(String(20))
@@ -26,21 +27,22 @@ class PostgresLedger:
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
 
-    def _get_last_hash(self, session):
-        last = session.query(DecisionRecord).order_by(DecisionRecord.id.desc()).first()
+    def _get_last_hash(self, session, namespace: str = "default"):
+        last = session.query(DecisionRecord).filter_by(namespace=namespace).order_by(DecisionRecord.id.desc()).first()
         return last.record_hash if last else "0" * 64
 
     def log_decision(self, intent: Intent, decision: Decision):
         sanitized_intent_json = sanitize_content(intent.model_dump_json())
         
         with self.Session() as session:
-            prev_hash = self._get_last_hash(session)
+            prev_hash = self._get_last_hash(session, intent.namespace)
             
-            # Integrity Hash
-            record_content = f"{intent.intent_id}{decision.status}{sanitized_intent_json}{decision.timestamp}{prev_hash}"
+            # Integrity Hash (including namespace now)
+            record_content = f"{intent.namespace}{intent.intent_id}{decision.status}{sanitized_intent_json}{decision.timestamp}{prev_hash}"
             current_hash = calculate_string_hash(record_content)
             
             record = DecisionRecord(
+                namespace=intent.namespace,
                 intent_id=intent.intent_id,
                 actor_agent=intent.actor_agent,
                 status=decision.status,
@@ -52,13 +54,17 @@ class PostgresLedger:
             )
             session.add(record)
             session.commit()
-            print(f"[POSTGRES LEDGER] Recorded: {decision.status} for {intent.intent_id}")
+            print(f"[POSTGRES LEDGER] Recorded: {decision.status} for {intent.intent_id} in {intent.namespace}")
 
-    def get_history(self):
+    def get_history(self, namespace: Optional[str] = None):
         with self.Session() as session:
-            rows = session.query(DecisionRecord).order_by(DecisionRecord.id.desc()).all()
+            query = session.query(DecisionRecord)
+            if namespace:
+                query = query.filter_by(namespace=namespace)
+            rows = query.order_by(DecisionRecord.id.desc()).all()
             return [
                 {
+                    "namespace": r.namespace,
                     "intent_id": r.intent_id,
                     "actor_agent": r.actor_agent,
                     "status": r.status,
