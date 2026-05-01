@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DASC-Core | Deterministic Kernel Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <h1>DASC Control Kernel</h1>
+            <p>Deterministic Agentic Swarm Control | MVP Interactive Simulation</p>
+        </header>
+
+        <section class="controls">
+            <button class="btn" onclick="processIntent('valid')">
+                <span>✅</span> Valid Intent (Tier 1)
+            </button>
+            <button class="btn" onclick="processIntent('stale')">
+                <span>⌛</span> Stale Intent (OCC Conflict)
+            </button>
+            <button class="btn" onclick="processIntent('high-risk')">
+                <span>⚠️</span> High-Risk (Tier 3 - No Gate)
+            </button>
+            <button class="btn" onclick="processIntent('taint')">
+                <span>🚫</span> Tainted (IFC Violation)
+            </button>
+        </section>
+
+        <div class="flow-container">
+            <div class="connector"></div>
+            
+            <!-- Stage 1: Probabilistic Swarm -->
+            <div class="stage" id="swarm-stage">
+                <div class="stage-title">Probabilistic Swarm</div>
+                <div class="swarm-pool">
+                    <div class="agent-icon">🤖</div>
+                    <div id="intent-info" style="font-size: 0.8rem; color: var(--text-dim); text-align: center;">
+                        Awaiting agent output...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stage 2: DASC Control Kernel -->
+            <div class="stage" id="kernel-stage">
+                <div class="stage-title">DASC Control Kernel (κ)</div>
+                <div class="kernel-pipeline">
+                    <div class="check-item" id="check-schema">
+                        <span>Schema Validation</span>
+                        <div class="status-dot"></div>
+                    </div>
+                    <div class="check-item" id="check-occ">
+                        <span>OCC / Version Check</span>
+                        <div class="status-dot"></div>
+                    </div>
+                    <div class="check-item" id="check-policy">
+                        <span>Risk Policy Check</span>
+                        <div class="status-dot"></div>
+                    </div>
+                    <div class="check-item" id="check-taint">
+                        <span>IFC / Taint Check</span>
+                        <div class="status-dot"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stage 3: Authoritative State -->
+            <div class="stage" id="state-stage">
+                <div class="stage-title">Authoritative State</div>
+                <div class="ledger-stack" id="ledger-stack">
+                    <div style="text-align: center; color: var(--text-dim); padding: 2rem; font-style: italic;">
+                        Ledger initialized. No commits yet.
+                    </div>
+                </div>
+            </div>
+
+            <div id="intent-token" class="intent-token">📄</div>
+            <div id="decision-overlay" class="decision-overlay">COMMIT</div>
+        </div>
+    </div>
+
+    <script>
+        const checks = ['schema', 'occ', 'policy', 'taint'];
+        const checkElements = {
+            schema: document.getElementById('check-schema'),
+            occ: document.getElementById('check-occ'),
+            policy: document.getElementById('check-policy'),
+            taint: document.getElementById('check-taint')
+        };
+        const ledgerStack = document.getElementById('ledger-stack');
+        const intentToken = document.getElementById('intent-token');
+        const decisionOverlay = document.getElementById('decision-overlay');
+        const intentInfo = document.getElementById('intent-info');
+
+        let isProcessing = false;
+
+        async function processIntent(type) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            // Reset UI
+            resetChecks();
+            decisionOverlay.className = 'decision-overlay';
+            
+            const scenarios = {
+                valid: {
+                    name: 'INT-001: Update Profile',
+                    steps: [true, true, true, true],
+                    decision: 'COMMIT',
+                    reason: null
+                },
+                stale: {
+                    name: 'INT-002: Patch Ledger',
+                    steps: [true, false],
+                    decision: 'REJECT',
+                    reason: 'OCC_CONFLICT: v1.0 != v2.1'
+                },
+                'high-risk': {
+                    name: 'INT-003: Delete Cluster',
+                    steps: [true, true, false],
+                    decision: 'REJECT',
+                    reason: 'MISSING_COMPENSATION_PLAN'
+                },
+                taint: {
+                    name: 'INT-004: Exfiltrate Data',
+                    steps: [true, true, true, false],
+                    decision: 'REJECT',
+                    reason: 'IFC_TAINT_DETECTED'
+                }
+            };
+
+            const scenario = scenarios[type];
+            intentInfo.innerHTML = `<strong>Generating:</strong><br>${scenario.name}`;
+
+            // 1. Move token to Swarm
+            const swarmRect = document.getElementById('swarm-stage').getBoundingClientRect();
+            const kernelRect = document.getElementById('kernel-stage').getBoundingClientRect();
+            const stateRect = document.getElementById('state-stage').getBoundingClientRect();
+
+            intentToken.style.left = `${swarmRect.left + swarmRect.width / 2 - 20}px`;
+            intentToken.style.top = `${swarmRect.top + swarmRect.height / 2 - 20}px`;
+            intentToken.classList.add('visible');
+
+            await sleep(800);
+
+            // 2. Move to Kernel
+            intentToken.style.left = `${kernelRect.left + kernelRect.width / 2 - 20}px`;
+            intentToken.style.top = `${kernelRect.top + 40}px`;
+
+            await sleep(800);
+
+            // 3. Process Checks
+            let finalResult = 'COMMIT';
+            for (let i = 0; i < scenario.steps.length; i++) {
+                const checkKey = checks[i];
+                const el = checkElements[checkKey];
+                el.classList.add('active');
+                
+                // Move token to check item
+                const checkRect = el.getBoundingClientRect();
+                intentToken.style.top = `${checkRect.top + 5}px`;
+
+                await sleep(600);
+                
+                el.classList.remove('active');
+                if (scenario.steps[i]) {
+                    el.classList.add('pass');
+                } else {
+                    el.classList.add('fail');
+                    finalResult = 'REJECT';
+                    break;
+                }
+            }
+
+            // 4. Show Decision
+            decisionOverlay.textContent = finalResult === 'COMMIT' ? 'COMMIT' : `REJECT: ${scenario.reason}`;
+            decisionOverlay.classList.add('decision-overlay', 'show', finalResult.toLowerCase());
+            
+            await sleep(1000);
+
+            if (finalResult === 'COMMIT') {
+                // Move to State
+                intentToken.style.left = `${stateRect.left + stateRect.width / 2 - 20}px`;
+                intentToken.style.top = `${stateRect.top + stateRect.height / 2 - 20}px`;
+                await sleep(600);
+                addLedgerEntry(scenario.name, 'COMMIT');
+            } else {
+                addLedgerEntry(scenario.name, 'REJECT', scenario.reason);
+            }
+
+            await sleep(1500);
+            
+            // Cleanup
+            intentToken.classList.remove('visible');
+            decisionOverlay.classList.remove('show');
+            isProcessing = false;
+        }
+
+        function resetChecks() {
+            Object.values(checkElements).forEach(el => {
+                el.className = 'check-item';
+            });
+        }
+
+        function addLedgerEntry(id, status, reason = '') {
+            if (ledgerStack.querySelector('div[style*="italic"]')) {
+                ledgerStack.innerHTML = '';
+            }
+            const div = document.createElement('div');
+            div.className = `ledger-entry ${status.toLowerCase()}`;
+            div.innerHTML = `
+                <strong>${status}: ${id}</strong><br>
+                <span style="opacity: 0.6; font-size: 0.7rem;">${new Date().toLocaleTimeString()}</span>
+                ${reason ? `<div style="color: var(--accent-error); margin-top: 4px;">${reason}</div>` : ''}
+            `;
+            ledgerStack.prepend(div);
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>
