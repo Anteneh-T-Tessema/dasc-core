@@ -16,19 +16,38 @@ pip install dasc-core
 
 - **LangChain/LangGraph Integration**: Use `DASCCommitTool` to wrap agent actions.
 - **AutoGen Support**: Use `DASCGatekeeper` to intercept and validate function calls.
-- **Optimistic Concurrency Control (OCC)**: Prevents TOCTOU (Time-of-Check to Time-of-Use) vulnerabilities.
-- **SQLite Ledger**: Persistent, bitemporal audit log of every decision.
+- **Semantic OCC (Hashing)**: Use `hash:<sha256>` in version vectors for automatic file content verification.
+- **Structured Observability**: Built-in logging with detailed evaluation stages.
+- **Programmable Rejections**: Custom exceptions (`OCCConflictError`, etc.) for robust error handling.
+- **Bitemporal SQLite Ledger**: Persistent audit log of every decision.
 
 ## Quick Start
 
+### Using the Kernel with Exceptions
+
 ```python
 from dasc.kernel import Kernel
-from dasc.adapters.langchain import DASCCommitTool
+from dasc.exceptions import OCCConflictError
 
 kernel = Kernel()
-dasc_tool = DASCCommitTool(kernel=kernel)
 
-# Add dasc_tool to your LangChain agent's toolset
+try:
+    kernel.evaluate(intent, raise_on_failure=True)
+except OCCConflictError:
+    # Trigger agent retry or state refresh logic
+    pass
+```
+
+### Using Semantic OCC (Hashing)
+
+```python
+from dasc.utils import calculate_file_hash
+
+file_hash = calculate_file_hash("data.json")
+intent = Intent(
+    ...,
+    state_version_vector={"data.json": f"hash:{file_hash}"}
+)
 ```
 
 ## Documentation
@@ -39,9 +58,9 @@ The theoretical foundation of DASC is detailed in the accompanying research pape
 
 ## Examples
 
-Run the comparative demo to see DASC in action:
+Run the production features demo:
 ```bash
-python -m examples.demo_scenario
+python -m examples.production_features
 ```
 
 ## License
