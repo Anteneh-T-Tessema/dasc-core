@@ -52,9 +52,24 @@ intent = Intent(
 
 ## Documentation
 
-The theoretical foundation of DASC is detailed in the accompanying research paper:
+- **Visual Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Detailed Mermaid diagrams of the DASC logic flow.
 - **Research Paper (PDF)**: [docs/DASC_Academic_Paper.pdf](docs/DASC_Academic_Paper.pdf)
 - **Technical Overview**: [docs/DASC_Academic_Paper.md](docs/DASC_Academic_Paper.md)
+
+## DASC CLI
+
+The project includes a command-line tool for inspecting the ledger and generating hashes:
+
+```bash
+# View the last 10 decisions
+dasc inspect
+
+# Generate a hash for a file for OCC
+dasc hash my_data.csv
+
+# Verify a JSON intent manually
+dasc verify intent.json --state '{"my_data.csv": "v1.0"}'
+```
 
 ## Examples
 
