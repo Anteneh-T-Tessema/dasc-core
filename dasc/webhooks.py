@@ -23,15 +23,16 @@ class WebhookDispatcher:
         
         data = json.dumps(payload).encode('utf-8')
         
+        import requests
         for url in self.webhook_urls:
             try:
-                req = urllib.request.Request(
-                    url, 
-                    data=data, 
-                    headers={'Content-Type': 'application/json'}
+                response = requests.post(
+                    url,
+                    json=payload,
+                    timeout=5
                 )
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    logger.info(f"Successfully dispatched escalation to {url} (Status: {response.status})")
+                response.raise_for_status()
+                logger.info(f"Successfully dispatched escalation to {url} (Status: {response.status_code})")
             except Exception as e:
                 logger.error(f"Failed to dispatch webhook to {url}: {str(e)}")
 

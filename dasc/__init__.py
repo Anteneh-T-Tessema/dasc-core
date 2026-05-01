@@ -3,6 +3,7 @@ __version__ = "0.1.0"
 from .kernel import Kernel
 from .schemas import Intent, Evidence, Decision
 from .ledger import BitemporalLedger
+from .client import DASCClient
 from .exceptions import (
     DASCError,
     OCCConflictError,
@@ -18,6 +19,7 @@ __all__ = [
     "Evidence",
     "Decision",
     "BitemporalLedger",
+    "DASCClient",
     "DASCError",
     "OCCConflictError",
     "TaintDetectedError",

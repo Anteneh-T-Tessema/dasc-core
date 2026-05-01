@@ -19,7 +19,8 @@ class DASCClient:
         response = requests.post(
             f"{self.api_url}/evaluate",
             json=intent.model_dump(),
-            headers=self.headers
+            headers=self.headers,
+            timeout=10
         )
         
         if response.status_code == 200:
@@ -40,6 +41,7 @@ class DASCClient:
         response = requests.get(
             f"{self.api_url}/ledger", 
             params=params, 
-            headers=self.headers
+            headers=self.headers,
+            timeout=10
         )
         return response.json()
