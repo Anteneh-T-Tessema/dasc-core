@@ -33,7 +33,9 @@ dasc_tool = DASCCommitTool(kernel=kernel)
 
 ## Documentation
 
-See [docs/DASC_Academic_Paper.md](docs/DASC_Academic_Paper.md) for the theoretical foundation of the commitment boundary.
+The theoretical foundation of DASC is detailed in the accompanying research paper:
+- **Research Paper (PDF)**: [docs/DASC_Academic_Paper.pdf](docs/DASC_Academic_Paper.pdf)
+- **Technical Overview**: [docs/DASC_Academic_Paper.md](docs/DASC_Academic_Paper.md)
 
 ## Examples
 

@@ -1,5 +1,8 @@
 # DASC: Deterministic Agentic Swarm Control
 
+> [!IMPORTANT]
+> **Read the full research paper:** [DASC_Academic_Paper.pdf](DASC_Academic_Paper.pdf)
+
 ## The Cognitive Fault vs. Committed Fault Paradigm
 
 In modern AI orchestration, failures generally fall into two categories:
