@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dasc-core"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
   { name="Anteneh T. Tessema", email="anteneh@example.com" },
 ]
@@ -24,6 +24,9 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "requests>=2.31.0"
 ]
+
+[tool.setuptools]
+packages = ["dasc", "dasc.adapters"]
 
 [project.urls]
 "Homepage" = "https://github.com/Anteneh-T-Tessema/dasc-core"
