@@ -5,8 +5,10 @@ import { Intent } from "./types.js";
 import { cybersecurityPolicy } from "./policies/cybersecurity.js";
 import { financePolicy } from "./policies/finance.js";
 import { healthcarePolicy } from "./policies/healthcare.js";
+import { privacyPolicy } from "./policies/privacy.js";
 import fastifyWebsocket from "@fastify/websocket";
 import "dotenv/config";
+import * as path from "path";
 
 const fastify = Fastify({ 
   logger: {
@@ -29,9 +31,12 @@ const kernel = new Kernel({
 kernel.registerPolicy(cybersecurityPolicy);
 kernel.registerPolicy(financePolicy);
 kernel.registerPolicy(healthcarePolicy);
+kernel.registerPolicy(privacyPolicy);
 
 // Declarative Policy Engine configuration
 const RULES_FILE = process.env.DASC_RULES_FILE || "dasc_rules.json";
+const RULES_DIR = process.env.DASC_RULES_DIR || "dasc_rules.d";
+const POLICIES_DIR = process.env.DASC_POLICIES_DIR || "dasc_policies.d";
 const declarativeEngine = new DeclarativePolicyEngine();
 
 if (fs.existsSync(RULES_FILE)) {
@@ -67,7 +72,43 @@ if (fs.existsSync(RULES_FILE)) {
   }
 }
 
+if (fs.existsSync(RULES_DIR) && fs.statSync(RULES_DIR).isDirectory()) {
+  try {
+    declarativeEngine.loadRulesFromDirectory(RULES_DIR);
+    console.log(`[DASC] Loaded additional declarative rules from folder ${RULES_DIR}. Total rules: ${declarativeEngine.rules.length}`);
+  } catch (err: any) {
+    console.error(`[DASC] Error loading rules from directory ${RULES_DIR}: ${err.message}`);
+  }
+}
+
 kernel.registerPolicy(declarativeEngine.evaluatePolicies);
+
+// Load Dynamic Imperative Policies (TS/JS)
+if (fs.existsSync(POLICIES_DIR) && fs.statSync(POLICIES_DIR).isDirectory()) {
+  console.log(`[DASC] Scanning imperative policies directory: ${POLICIES_DIR}`);
+  try {
+    const files = fs.readdirSync(POLICIES_DIR);
+    for (const file of files) {
+      if ((file.endsWith(".js") || file.endsWith(".ts")) && !file.startsWith("_")) {
+        const filePath = path.resolve(POLICIES_DIR, file);
+        try {
+          const moduleUrl = `file://${filePath}`;
+          const module = await import(moduleUrl);
+          for (const [key, value] of Object.entries(module)) {
+            if (typeof value === "function" && key.endsWith("Policy")) {
+              kernel.registerPolicy(value as any);
+              console.log(`[DASC] Registered dynamic imperative policy: ${key} (from ${file})`);
+            }
+          }
+        } catch (err: any) {
+          console.error(`[DASC] Error loading dynamic policy from ${file}: ${err.message}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error(`[DASC] Error reading policies directory ${POLICIES_DIR}: ${err.message}`);
+  }
+}
 
 await fastify.register(cors, {
   origin: true // In production, restrict this
@@ -229,6 +270,64 @@ fastify.post("/policies", async (request, reply) => {
     return { status: "success", rules: declarativeEngine.rules };
   } catch (err: any) {
     return reply.status(500).send({ error: `Failed to save policies: ${err.message}` });
+  }
+});
+
+// GET /export
+fastify.get("/export", async (request, reply) => {
+  const { format, as_of } = request.query as { format?: string; as_of?: string };
+  let history: any[];
+  
+  if (as_of) {
+    history = (kernel as any).ledger.getHistoryAsOf(as_of, 1000);
+  } else {
+    history = kernel["ledger"].getHistory(1000);
+  }
+
+  if (format === "csv") {
+    let csv = "Namespace,Intent ID,Actor Agent,Status,Reason Codes,Timestamp,Previous Hash,Record Hash\n";
+    for (const r of history) {
+      const reasons = Array.isArray(r.reason_codes) ? r.reason_codes.join("; ") : String(r.reason_codes);
+      const ns = r.namespace || "default";
+      csv += `"${ns}","${r.intent_id}","${r.actor_agent}","${r.status}","${reasons}","${r.timestamp}","${r.previous_hash}","${r.record_hash}"\n`;
+    }
+    reply.header("Content-Type", "text/csv");
+    reply.header("Content-Disposition", "attachment; filename=dasc_compliance_report.csv");
+    return csv;
+  } else if (format === "markdown") {
+    const lines: string[] = [];
+    lines.push("# DASC Compliance Security Audit Report");
+    lines.push(`\n* **Generated**: ${new Date().toISOString()}`);
+    if (as_of) {
+      lines.push(`* **Bitemporal Cutoff (As Of)**: ${as_of}`);
+    }
+    const isIntact = (kernel as any).ledger.verifyIntegrity();
+    lines.push(`* **Ledger Integrity Check**: ${isIntact ? "PASS" : "FAIL"}`);
+    
+    lines.push("\n## Audit Trail Summary");
+    const total = history.length;
+    const commits = history.filter(h => h.status === "COMMIT").length;
+    const rejections = history.filter(h => h.status === "REJECT").length;
+    const escalations = history.filter(h => h.status === "ESCALATE").length;
+    
+    lines.push(`* **Total Evaluated Intents**: ${total}`);
+    lines.push(`* **Total Commits**:           ${commits}`);
+    lines.push(`* **Total Rejections**:        ${rejections}`);
+    lines.push(`* **Total Escalations**:       ${escalations}`);
+    
+    lines.push("\n## Ledger Records");
+    lines.push("| Timestamp | Intent ID | Agent | Status | Reasons | Record Hash |");
+    lines.push("| --- | --- | --- | --- | --- | --- |");
+    for (const r of history) {
+      const reasons = Array.isArray(r.reason_codes) ? r.reason_codes.join(", ") : String(r.reason_codes);
+      lines.push(`| ${r.timestamp} | \`${r.intent_id}\` | \`${r.actor_agent}\` | **${r.status}** | ${reasons || "None"} | \`${r.record_hash.slice(0, 8)}\` |`);
+    }
+    
+    reply.header("Content-Type", "text/markdown");
+    reply.header("Content-Disposition", "attachment; filename=dasc_compliance_report.md");
+    return lines.join("\n");
+  } else {
+    return { history };
   }
 });
 

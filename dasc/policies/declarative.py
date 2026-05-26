@@ -115,6 +115,19 @@ class DeclarativePolicyEngine:
             data = json.load(f)
             self.rules = data.get("rules", [])
 
+    def load_rules_from_directory(self, dir_path: str):
+        import glob
+        import os
+        if os.path.exists(dir_path) and os.path.isdir(dir_path):
+            for file_path in glob.glob(os.path.join(dir_path, "*.json")):
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+                        self.rules.extend(data.get("rules", []))
+                except Exception as e:
+                    # Log error or print warning
+                    print(f"[DASC] Error loading declarative rule file {file_path}: {e}")
+
     def evaluate_policies(self, intent: Intent):
         """
         Policy evaluator conforming to DASC's custom policy signature: (intent) -> (pass, reason)

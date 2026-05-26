@@ -43,6 +43,31 @@ export default function DASCDashboard() {
   const [policiesJson, setPoliciesJson] = useState<string>('{\n  "rules": []\n}');
   const [policiesError, setPoliciesError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+
+  const downloadReport = async (format: string) => {
+    try {
+      const url = asOf 
+        ? `${API_BASE}/export?format=${format}&as_of=${encodeURIComponent(asOf)}`
+        : `${API_BASE}/export?format=${format}`;
+      
+      const res = await fetch(url, {
+        headers: { 'X-API-KEY': 'dasc-dev-key-123' }
+      });
+      
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `dasc_compliance_report.${format === 'markdown' ? 'md' : format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setShowExportDropdown(false);
+    } catch (err) {
+      console.error("Failed to download report:", err);
+    }
+  };
 
   const fetchData = async (targetAsOf = asOf) => {
     try {
@@ -283,7 +308,7 @@ export default function DASCDashboard() {
             <button 
               onClick={verifyIntegrity}
               disabled={isVerifyingIntegrity}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all active:scale-98 ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all active:scale-98 cursor-pointer ${
                 integrity.valid 
                   ? 'bg-emerald-500/5 hover:bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
                   : 'bg-rose-500/5 hover:bg-rose-500/10 border-rose-500/20 text-rose-400'
@@ -296,6 +321,39 @@ export default function DASCDashboard() {
               </span>
               Audit Integrity
             </button>
+
+            {/* Export Dropdown */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowExportDropdown(!showExportDropdown)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all active:scale-98 cursor-pointer"
+              >
+                <FileJson className="w-3.5 h-3.5 text-indigo-400" />
+                Export Report
+              </button>
+              {showExportDropdown && (
+                <div className="absolute right-0 mt-2 w-44 bg-[#0a0a0d] border border-slate-800 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-100">
+                  <button 
+                    onClick={() => downloadReport('markdown')}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-indigo-500/10 hover:text-white transition-all cursor-pointer font-semibold block"
+                  >
+                    Download Markdown (.md)
+                  </button>
+                  <button 
+                    onClick={() => downloadReport('csv')}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-indigo-500/10 hover:text-white transition-all cursor-pointer font-semibold block"
+                  >
+                    Download CSV (.csv)
+                  </button>
+                  <button 
+                    onClick={() => downloadReport('json')}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-indigo-500/10 hover:text-white transition-all cursor-pointer font-semibold block"
+                  >
+                    Download JSON (.json)
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button onClick={() => fetchData()} className="text-slate-400 hover:text-white hover:bg-slate-800/40 p-2 rounded-xl border border-transparent hover:border-slate-800/80 transition-all duration-200">
               <RefreshCcw className="w-4.5 h-4.5" />
@@ -653,6 +711,86 @@ export default function DASCDashboard() {
                 
                 <div className="space-y-2">
                   {[
+                    {
+                      name: 'HIPAA Patient Privacy Gate',
+                      desc: 'Blocks unmasked PHI access unless break-glass authorized',
+                      rule: {
+                        name: "HIPAA PHI Access Gate",
+                        condition: "payload.has_phi == true and payload.break_glass_authorized == false",
+                        action: "REJECT",
+                        reason: "HIPAA_VIOLATION: Unauthorized PHI access attempt"
+                      }
+                    },
+                    {
+                      name: 'GDPR Location Sovereignty Check',
+                      desc: 'Ensures EU user data remains in EU server regions',
+                      rule: {
+                        name: "GDPR Location Sovereignty",
+                        condition: "payload.user_residency == 'EU' and payload.target_region != 'EU'",
+                        action: "REJECT",
+                        reason: "GDPR_VIOLATION: EU user data must remain in EU region"
+                      }
+                    },
+                    {
+                      name: 'ISO 42001 High-Risk AI Human Gate',
+                      desc: 'Escalates high-risk AI decisions for human oversight',
+                      rule: {
+                        name: "ISO 42001 AI human gate",
+                        condition: "risk_tier >= 3 and payload.human_supervisor_present == false",
+                        action: "ESCALATE",
+                        reason: "ISO_42001_COMPLIANCE: High-risk AI actions require human oversight"
+                      }
+                    },
+                    {
+                      name: 'ISO 27001 Configuration Access Control',
+                      desc: 'Blocks system modification by non-admin agents',
+                      rule: {
+                        name: "ISO 27001 Access control",
+                        condition: "action_type in ['write_config', 'delete_backup'] and actor_agent != 'admin-agent'",
+                        action: "REJECT",
+                        reason: "ISO_27001_CONTROL_A9: Unauthorized system modification blocked"
+                      }
+                    },
+                    {
+                      name: 'Security: DB Exfiltration Guard',
+                      desc: 'Escalates database or backup extractions by non-security actors',
+                      rule: {
+                        name: "Database Exfiltration Guard",
+                        condition: "target_artifact in ['database', 'backup'] and action_type == 'READ' and actor_agent != 'security-agent'",
+                        action: "ESCALATE",
+                        reason: "SECURITY_EXFILTRATION_OVERWATCH: Unauthorized database read attempted"
+                      }
+                    },
+                    {
+                      name: 'Legal: CCPA Data Erasure Gate',
+                      desc: 'Blocks customer deletion requests without verification check',
+                      rule: {
+                        name: "CCPA Data Deletion Gate",
+                        condition: "action_type == 'DELETE_CUSTOMER_DATA' and payload.ccpa_verified == false",
+                        action: "REJECT",
+                        reason: "CCPA_COMPLIANCE: Customer deletion request requires verified CCPA request check"
+                      }
+                    },
+                    {
+                      name: 'CRM: Contact Bulk Export Guard',
+                      desc: 'Escalates bulk contact downloads exceeding 100 entries',
+                      rule: {
+                        name: "CRM Bulk Export Guard",
+                        condition: "action_type == 'EXPORT_CRM_CONTACTS' and payload.record_count > 100",
+                        action: "ESCALATE",
+                        reason: "CRM_DATA_LEAK_PREVENTION: Exporting >100 CRM records requires manager approval"
+                      }
+                    },
+                    {
+                      name: 'Supply Chain: Order Value Limit',
+                      desc: 'Escalates purchase orders exceeding $50,000 threshold',
+                      rule: {
+                        name: "Supply Chain Order Limit",
+                        condition: "action_type == 'PLACE_PURCHASE_ORDER' and payload.total_cost > 50000",
+                        action: "ESCALATE",
+                        reason: "SUPPLY_CHAIN_LIMIT: Purchase orders exceeding $50,000 require procurement sign-off"
+                      }
+                    },
                     {
                       name: 'Financial Spend Limit',
                       desc: 'Blocks transaction amounts > 1000',

@@ -26,6 +26,8 @@ services:
       - DASC_MASTER_KEY=dasc-dev-key-123
     depends_on:
       - dasc-db
+    volumes:
+      - ./dasc_rules.json:/app/dasc_rules.json
     restart: always
 
 volumes:

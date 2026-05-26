@@ -1,5 +1,6 @@
 import { Intent } from "../types.js";
 import * as fs from "fs";
+import * as path from "path";
 
 function getFieldValue(obj: any, fieldPath: string): any {
   const parts = fieldPath.trim().split(".");
@@ -129,6 +130,25 @@ export class DeclarativePolicyEngine {
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
     this.rules = parsed.rules || [];
+  }
+
+  public loadRulesFromDirectory(dirPath: string) {
+    if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+      const files = fs.readdirSync(dirPath);
+      for (const file of files) {
+        if (file.endsWith(".json")) {
+          try {
+            const raw = fs.readFileSync(path.join(dirPath, file), "utf-8");
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.rules)) {
+              this.rules.push(...parsed.rules);
+            }
+          } catch (err: any) {
+            console.error(`[DASC] Error loading declarative rule file ${file}: ${err.message}`);
+          }
+        }
+      }
+    }
   }
 
   public evaluatePolicies = (intent: Intent): { pass: boolean; reason?: string } => {

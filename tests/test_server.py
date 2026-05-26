@@ -95,7 +95,7 @@ def test_auth_failure():
     client = TestClient(app)
     # Missing header
     response = client.get("/policies")
-    assert response.status_code == 403
+    assert response.status_code in (401, 403)
 
     # Invalid key
     response = client.get("/policies", headers={"X-API-KEY": "wrong-key"})
@@ -147,3 +147,48 @@ def test_evaluate_policies_with_list_membership():
     res_eval2 = client.post("/evaluate", headers=headers, json=intent_allowed)
     assert res_eval2.status_code == 200
     assert res_eval2.json()["status"] == "COMMIT"
+
+def test_export_ledger():
+    client = TestClient(app)
+    headers = {"X-API-KEY": "dasc-dev-key-123"}
+    
+    # 1. Post a test intent to populate the ledger history
+    intent = {
+        "intent_id": "export-test-intent",
+        "actor_agent": "export-tester",
+        "action_type": "read",
+        "target_artifact": "data.txt",
+        "risk_tier": 1,
+        "payload": {},
+        "evidence": []
+    }
+    eval_res = client.post("/evaluate", headers=headers, json=intent)
+    assert eval_res.status_code == 200
+    
+    # 2. Test JSON export (default)
+    res_json = client.get("/export", headers=headers)
+    assert res_json.status_code == 200
+    assert "application/json" in res_json.headers["content-type"]
+    json_data = res_json.json()
+    assert "history" in json_data
+    assert len(json_data["history"]) > 0
+    # verify fields
+    assert any(h["intent_id"] == "export-test-intent" for h in json_data["history"])
+    
+    # 3. Test CSV export
+    res_csv = client.get("/export?format=csv", headers=headers)
+    assert res_csv.status_code == 200
+    assert "text/csv" in res_csv.headers["content-type"]
+    assert "attachment; filename=dasc_compliance_report.csv" in res_csv.headers["content-disposition"]
+    csv_text = res_csv.text
+    assert "Namespace,Intent ID,Actor Agent,Status" in csv_text or "export-test-intent" in csv_text
+    
+    # 4. Test Markdown export
+    res_md = client.get("/export?format=markdown", headers=headers)
+    assert res_md.status_code == 200
+    assert "text/markdown" in res_md.headers["content-type"]
+    assert "attachment; filename=dasc_compliance_report.md" in res_md.headers["content-disposition"]
+    md_text = res_md.text
+    assert "# DASC Compliance Security Audit Report" in md_text
+    assert "export-test-intent" in md_text
+

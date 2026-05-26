@@ -10,7 +10,7 @@ from .schemas import Decision, Intent
 import os
 from .persistence import PostgresLedger
 
-from fastapi import FastAPI, HTTPException, Depends, Security, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Security, WebSocket, WebSocketDisconnect, Response
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from .persistence import PostgresLedger
@@ -60,16 +60,18 @@ else:
     ledger = BitemporalLedger()
     print("[DASC] Using Local SQLite Ledger")
 
-from .policies import cybersecurity_policy, finance_policy, healthcare_policy
+from .policies import cybersecurity_policy, finance_policy, healthcare_policy, privacy_policy
 from .policies.declarative import DeclarativePolicyEngine
 
 kernel = Kernel(current_state_versions={"config.json": "v1.0.0"})
 kernel.register_policy(cybersecurity_policy)
 kernel.register_policy(finance_policy)
 kernel.register_policy(healthcare_policy)
+kernel.register_policy(privacy_policy)
 
 # Declarative Policy Engine configuration
 RULES_FILE = os.getenv("DASC_RULES_FILE", "dasc_rules.json")
+RULES_DIR = os.getenv("DASC_RULES_DIR", "dasc_rules.d")
 declarative_engine = DeclarativePolicyEngine()
 
 if os.path.exists(RULES_FILE):
@@ -103,7 +105,38 @@ else:
     except Exception as e:
         print(f"[DASC] Error writing default rules file: {e}")
 
+if os.path.exists(RULES_DIR) and os.path.isdir(RULES_DIR):
+    try:
+        declarative_engine.load_rules_from_directory(RULES_DIR)
+        print(f"[DASC] Loaded additional rules from folder {RULES_DIR}. Total rules: {len(declarative_engine.rules)}")
+    except Exception as e:
+        print(f"[DASC] Error loading rules from directory {RULES_DIR}: {e}")
+
 kernel.register_policy(declarative_engine.evaluate_policies)
+
+# Imperative dynamic policies
+POLICIES_DIR = os.getenv("DASC_POLICIES_DIR", "dasc_policies.d")
+if os.path.exists(POLICIES_DIR) and os.path.isdir(POLICIES_DIR):
+    import importlib.util
+    import sys
+    print(f"[DASC] Scanning imperative policies directory: {POLICIES_DIR}")
+    for root_dir, _, files in os.walk(POLICIES_DIR):
+        for file in files:
+            if file.endswith(".py") and not file.startswith("__"):
+                file_path = os.path.join(root_dir, file)
+                module_name = f"dasc_dynamic_policy_{os.path.splitext(file)[0]}"
+                try:
+                    spec = importlib.util.spec_from_file_location(module_name, file_path)
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        sys.modules[module_name] = module
+                        spec.loader.exec_module(module)
+                        for attr_name in dir(module):
+                            attr = getattr(module, attr_name)
+                            if callable(attr) and attr_name.endswith("_policy") and attr.__module__ == module_name:
+                                kernel.register_policy(attr)
+                except Exception as e:
+                    print(f"[DASC] Error loading dynamic policy from {file_path}: {e}")
 
 class HITLApproval(BaseModel):
     intent_id: str
@@ -261,6 +294,69 @@ def update_policies(rules_data: dict):
         return {"status": "success", "rules": declarative_engine.rules}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update rules: {str(e)}")
+
+@app.get("/export", dependencies=[Depends(get_api_key)])
+def export_ledger(format: str = "json", as_of: Optional[str] = None):
+    """Exports compliance reports in JSON, CSV, or Markdown format."""
+    import io
+    import csv
+    import time
+    
+    if as_of:
+        if hasattr(ledger, "get_history_as_of"):
+            history = ledger.get_history_as_of(as_of)
+        else:
+            history = ledger.get_history()
+    else:
+        history = ledger.get_history()
+        
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Namespace", "Intent ID", "Actor Agent", "Status", "Reason Codes", "Timestamp", "Previous Hash", "Record Hash"])
+        for r in history:
+            writer.writerow([
+                r.get("namespace", "default"),
+                r["intent_id"],
+                r["actor_agent"],
+                r["status"],
+                ", ".join(r["reason_codes"]) if isinstance(r["reason_codes"], list) else str(r["reason_codes"]),
+                r["timestamp"],
+                r["previous_hash"],
+                r["record_hash"]
+            ])
+        return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=dasc_compliance_report.csv"})
+        
+    elif format == "markdown":
+        md = []
+        md.append("# DASC Compliance Security Audit Report")
+        md.append(f"\n* **Generated**: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
+        if as_of:
+            md.append(f"* **Bitemporal Cutoff (As Of)**: {as_of}")
+        md.append(f"* **Ledger Integrity Check**: {'PASS' if ledger.verify_integrity() else 'FAIL'}")
+        
+        md.append("\n## Audit Trail Summary")
+        total = len(history)
+        commits = len([h for h in history if h["status"] == "COMMIT"])
+        rejections = len([h for h in history if h["status"] == "REJECT"])
+        escalations = len([h for h in history if h["status"] == "ESCALATE"])
+        
+        md.append(f"* **Total Evaluated Intents**: {total}")
+        md.append(f"* **Total Commits**:           {commits}")
+        md.append(f"* **Total Rejections**:        {rejections}")
+        md.append(f"* **Total Escalations**:       {escalations}")
+        
+        md.append("\n## Ledger Records")
+        md.append("| Timestamp | Intent ID | Agent | Status | Reasons | Record Hash |")
+        md.append("| --- | --- | --- | --- | --- | --- |")
+        for r in history:
+            reasons_str = ", ".join(r["reason_codes"]) if isinstance(r["reason_codes"], list) else str(r["reason_codes"])
+            md.append(f"| {r['timestamp']} | `{r['intent_id']}` | `{r['actor_agent']}` | **{r['status']}** | {reasons_str or 'None'} | `{r['record_hash'][:8]}` |")
+            
+        return Response(content="\n".join(md), media_type="text/markdown", headers={"Content-Disposition": "attachment; filename=dasc_compliance_report.md"})
+        
+    else:  # default to json
+        return {"history": history}
 
 # Serve static dashboard files if they exist in the package
 from fastapi.staticfiles import StaticFiles
