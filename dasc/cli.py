@@ -14,6 +14,11 @@ def main():
     inspect_parser = subparsers.add_parser("inspect", help="Inspect the bitemporal ledger")
     inspect_parser.add_argument("--db", default="dasc_ledger.db", help="Path to SQLite ledger file")
     inspect_parser.add_argument("--limit", type=int, default=10, help="Number of records to show")
+    inspect_parser.add_argument("--as-of", help="Inspect ledger entries as of a specific ISO timestamp")
+
+    # Verify Ledger Integrity
+    integrity_parser = subparsers.add_parser("integrity", help="Verify the cryptographic hash-chain integrity of the ledger")
+    integrity_parser.add_argument("--db", default="dasc_ledger.db", help="Path to SQLite ledger file")
 
     # Calculate Hash
     hash_parser = subparsers.add_parser("hash", help="Calculate SHA-256 hash for OCC")
@@ -40,12 +45,29 @@ def main():
             return
         
         ledger = BitemporalLedger(db_path=args.db)
-        history = ledger.get_history()
+        if args.as_of:
+            history = ledger.get_history_as_of(args.as_of)
+            print(f"\n⌛ BITEMPORAL HISTORY AS OF: {args.as_of}")
+        else:
+            history = ledger.get_history()
         
         print(f"\n{'TIMESTAMP':<25} | {'INTENT_ID':<15} | {'STATUS':<10} | {'AGENT':<15}")
         print("-" * 75)
         for entry in history[:args.limit]:
             print(f"{entry['timestamp']:<25} | {entry['intent_id']:<15} | {entry['status']:<10} | {entry['actor_agent']:<15}")
+
+    elif args.command == "integrity":
+        if not os.path.exists(args.db):
+            print(f"Error: Ledger file {args.db} not found.")
+            sys.exit(1)
+        
+        ledger = BitemporalLedger(db_path=args.db)
+        is_valid = ledger.verify_integrity()
+        if is_valid:
+            print("\n✅ LEDGER INTEGRITY VALID: All cryptographic signatures and previous hash pointers match successfully.")
+        else:
+            print("\n❌ LEDGER CORRUPTED: Cryptographic mismatch detected! One or more records have been modified/tampered.")
+            sys.exit(1)
 
     elif args.command == "hash":
         file_hash = calculate_file_hash(args.file)
