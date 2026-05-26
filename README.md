@@ -200,6 +200,21 @@ Safety policies can also be programmatically updated at runtime via the API (usi
 *   **`GET /policies`**: Retrieve all active policies.
 *   **`POST /policies`**: Override the rules config file and hot-reload rules in memory instantly without restarting the server.
 
+### 📂 Dynamic & Directory-Based Loaders:
+In addition to a single rules file, DASC supports directory-based rules merging and runtime loading of custom imperative policy scripts:
+
+*   **`DASC_RULES_DIR`** (defaults to `dasc_rules.d/`): Any JSON files inside this folder containing a `"rules"` list will be scanned and merged into the active declarative rules engine on startup.
+*   **`DASC_POLICIES_DIR`** (defaults to `dasc_policies.d/`): Any custom Python files (ending in `.py`) or JavaScript/TypeScript modules (ending in `.js`/`.ts`) inside this folder will be scanned at startup. Any exported function matching `*_policy` (Python) or `*Policy` (TS/JS) will be registered dynamically to the safety kernel:
+    ```python
+    # Example custom policy file in dasc_policies.d/data_minimization.py:
+    def data_minimization_policy(intent):
+        """Custom dynamic data minimization constraint."""
+        payload = intent.payload or {}
+        if payload.get("save_forever") and not payload.get("legal_justification"):
+            return False, "DATA_MINIMIZATION_VIOLATION"
+        return True, ""
+    ```
+
 ---
 
 ## ⚖️ License
