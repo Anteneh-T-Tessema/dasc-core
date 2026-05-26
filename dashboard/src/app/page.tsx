@@ -37,6 +37,13 @@ export default function DASCDashboard() {
   const [isVerifyingIntegrity, setIsVerifyingIntegrity] = useState(false);
   const [integrityAlert, setIntegrityAlert] = useState<string | null>(null);
 
+  // Policies state
+  const [activeTab, setActiveTab] = useState<'activity' | 'policies'>('activity');
+  const [policies, setPolicies] = useState<any[]>([]);
+  const [policiesJson, setPoliciesJson] = useState<string>('{\n  "rules": []\n}');
+  const [policiesError, setPoliciesError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+
   const fetchData = async (targetAsOf = asOf) => {
     try {
       const ledgerUrl = targetAsOf ? `${API_BASE}/ledger?as_of=${encodeURIComponent(targetAsOf)}` : `${API_BASE}/ledger`;
@@ -52,6 +59,73 @@ export default function DASCDashboard() {
       setHistory(historyData);
     } catch (err) {
       console.error("Failed to fetch DASC data:", err);
+    }
+  };
+
+  const fetchPolicies = async () => {
+    try {
+      const headers = { 'X-API-KEY': 'dasc-dev-key-123' };
+      const res = await fetch(`${API_BASE}/policies`, { headers });
+      const data = await res.json();
+      if (data && data.rules) {
+        setPolicies(data.rules);
+        setPoliciesJson(JSON.stringify(data, null, 2));
+      }
+    } catch (err) {
+      console.error("Failed to fetch policies:", err);
+    }
+  };
+
+  const savePolicies = async () => {
+    setSaveStatus('saving');
+    setPoliciesError(null);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(policiesJson);
+      } catch (e: any) {
+        throw new Error(`JSON syntax error: ${e.message}`);
+      }
+
+      if (!parsed || !Array.isArray(parsed.rules)) {
+        throw new Error("Policies format must be an object with a 'rules' array");
+      }
+
+      for (let i = 0; i < parsed.rules.length; i++) {
+        const r = parsed.rules[i];
+        if (!r.name || !r.condition || !r.action || !r.reason) {
+          throw new Error(`Rule #${i+1} is missing required fields (name, condition, action, reason)`);
+        }
+        if (!['COMMIT', 'REJECT', 'ESCALATE'].includes(r.action)) {
+          throw new Error(`Rule #${i+1} action must be COMMIT, REJECT, or ESCALATE`);
+        }
+      }
+
+      const headers = { 
+        'Content-Type': 'application/json',
+        'X-API-KEY': 'dasc-dev-key-123' 
+      };
+      
+      const res = await fetch(`${API_BASE}/policies`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(parsed)
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || errorData.error || "Failed to update policies on server");
+      }
+      
+      const data = await res.json();
+      setPolicies(data.rules);
+      setPoliciesJson(JSON.stringify(data, null, 2));
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error("Save policies failed:", err);
+      setPoliciesError(err.message);
+      setSaveStatus('error');
     }
   };
 
@@ -104,6 +178,7 @@ export default function DASCDashboard() {
 
   useEffect(() => {
     fetchData();
+    fetchPolicies();
 
     // Establish WebSocket connection
     const wsUrl = API_BASE 
@@ -121,6 +196,7 @@ export default function DASCDashboard() {
         const data = JSON.parse(event.data);
         console.log("DASC Real-Time Update:", data);
         fetchData();
+        fetchPolicies();
       } catch (err) {
         console.error("Error parsing socket message:", err);
       }
@@ -136,6 +212,7 @@ export default function DASCDashboard() {
     // Fallback polling in case of websocket failure
     const interval = setInterval(() => {
       fetchData();
+      fetchPolicies();
     }, 5000);
 
     return () => {
@@ -283,160 +360,353 @@ export default function DASCDashboard() {
           ))}
         </div>
 
-        {/* Main Content Split */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
-          {/* Ledger Table */}
-          <div className="lg:col-span-2 space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2.5">
-                <Database className="w-5 h-5 text-indigo-400" />
-                Ledger Operations
-              </h2>
-              <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5" />
-                Click row to inspect cryptographic envelope
-              </div>
-            </div>
+      {/* Tabs navigation */}
+        <div className="flex border-b border-slate-800/80 mb-8 gap-6">
+          <button 
+            onClick={() => setActiveTab('activity')}
+            className={`pb-4 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all relative cursor-pointer ${
+              activeTab === 'activity' 
+                ? 'border-indigo-500 text-white font-bold' 
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Activity className="w-4.5 h-4.5" />
+            Activity Log
+          </button>
+          <button 
+            onClick={() => setActiveTab('policies')}
+            className={`pb-4 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all relative cursor-pointer ${
+              activeTab === 'policies' 
+                ? 'border-indigo-500 text-white font-bold' 
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-4.5 h-4.5" />
+            Safety Policies
+          </button>
+        </div>
 
-            <div className="bg-[#0f0f13]/80 backdrop-blur-md border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl shadow-black/10">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-800/80 bg-slate-900/40">
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Intent ID</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actor Agent</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Timestamp</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Inspect</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-850">
-                    {history.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
-                          No ledger records found.
-                        </td>
+        {activeTab === 'activity' ? (
+          /* Main Content Split */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+            {/* Ledger Table */}
+            <div className="lg:col-span-2 space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2.5">
+                  <Database className="w-5 h-5 text-indigo-400" />
+                  Ledger Operations
+                </h2>
+                <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5" />
+                  Click row to inspect cryptographic envelope
+                </div>
+              </div>
+
+              <div className="bg-[#0f0f13]/80 backdrop-blur-md border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl shadow-black/10">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800/80 bg-slate-900/40">
+                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Intent ID</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actor Agent</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Timestamp</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Inspect</th>
                       </tr>
-                    ) : (
-                      history.map((row: any, i) => (
-                        <tr 
-                          key={i} 
-                          onClick={() => setSelectedRecord(row)}
-                          className={`hover:bg-slate-800/35 transition-all duration-200 cursor-pointer group ${
-                            selectedRecord?.intent_id === row.intent_id ? 'bg-[#151522]/60 border-l-2 border-indigo-500' : ''
-                          }`}
-                        >
-                          <td className="px-6 py-4">
-                            <span className="font-mono text-indigo-400 text-sm font-medium">{row.intent_id}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <div className="w-5.5 h-5.5 bg-slate-800/60 rounded-md flex items-center justify-center text-[10px] text-slate-400 font-bold uppercase border border-slate-700/40">
-                                {row.actor_agent.slice(0, 2)}
-                              </div>
-                              <span className="text-slate-200 text-sm font-medium">{row.actor_agent}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-wider uppercase border ${
-                              row.status === 'COMMIT' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                              row.status === 'REJECT' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                              'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            }`}>
-                              {row.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-slate-400 text-xs">
-                            {new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all inline-block" />
+                    </thead>
+                    <tbody className="divide-y divide-slate-850">
+                      {history.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
+                            No ledger records found.
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        history.map((row: any, i) => (
+                          <tr 
+                            key={i} 
+                            onClick={() => setSelectedRecord(row)}
+                            className={`hover:bg-slate-800/35 transition-all duration-200 cursor-pointer group ${
+                              selectedRecord?.intent_id === row.intent_id ? 'bg-[#151522]/60 border-l-2 border-indigo-500' : ''
+                            }`}
+                          >
+                            <td className="px-6 py-4">
+                              <span className="font-mono text-indigo-400 text-sm font-medium">{row.intent_id}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-5.5 h-5.5 bg-slate-800/60 rounded-md flex items-center justify-center text-[10px] text-slate-400 font-bold uppercase border border-slate-700/40">
+                                  {row.actor_agent.slice(0, 2)}
+                                </div>
+                                <span className="text-slate-200 text-sm font-medium">{row.actor_agent}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-wider uppercase border ${
+                                row.status === 'COMMIT' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                row.status === 'REJECT' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                                'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              }`}>
+                                {row.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-slate-400 text-xs">
+                              {new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all inline-block" />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar / Active Escalations & Info */}
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-400 animate-pulse" />
+                Pending Escalations
+              </h2>
+              
+              <div className="space-y-4">
+                {pendingEscalations.length === 0 && (
+                  <div className="text-sm text-slate-500 italic p-8 border border-dashed border-slate-800 rounded-2xl text-center bg-[#0a0a0d]/40">
+                    No pending escalations requiring human oversight
+                  </div>
+                )}
+                {pendingEscalations.map((item: any, i) => {
+                  const intentPayload = parseJsonField(item.intent_json);
+                  return (
+                    <div key={i} className="bg-[#0f0f13]/85 backdrop-blur-md border border-amber-500/25 rounded-2xl p-5.5 space-y-4 relative overflow-hidden group shadow-lg shadow-amber-500/3">
+                      <div className="absolute top-0 right-0 p-2.5 bg-amber-500/15 rounded-bl-2xl text-amber-400 border-l border-b border-amber-500/20">
+                        <AlertTriangle className="w-4 h-4" />
+                      </div>
+                      
+                      <div>
+                        <p className="text-[9px] uppercase tracking-[0.2em] text-amber-400 font-extrabold mb-1">Human Oversight Needed</p>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-slate-400" />
+                          {intentPayload.action_type || 'ADMIN_ACTION'}
+                        </h3>
+                      </div>
+                      
+                      <div className="text-xs space-y-1.5 text-slate-400 bg-slate-950/60 p-3.5 rounded-xl font-mono border border-slate-850">
+                        <div><span className="text-indigo-400">intent_id:</span> "{item.intent_id}"</div>
+                        <div><span className="text-indigo-400">agent:</span> "{item.actor_agent}"</div>
+                        <div><span className="text-indigo-400">target:</span> "{intentPayload.target_artifact}"</div>
+                        {intentPayload.risk_tier && <div><span className="text-indigo-400">risk_tier:</span> {intentPayload.risk_tier}</div>}
+                      </div>
+
+                      <div className="flex gap-2.5 pt-1">
+                        <button 
+                          onClick={() => handleApproval(item.intent_id, true)}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-97 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Check className="w-4 h-4" /> Approve
+                        </button>
+                        <button 
+                          onClick={() => handleApproval(item.intent_id, false)}
+                          className="flex-1 bg-rose-600 hover:bg-rose-500 active:scale-97 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-rose-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <X className="w-4 h-4" /> Deny
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Quick Action Info Panel */}
+              <div className="bg-gradient-to-br from-indigo-950/30 to-indigo-900/15 border border-indigo-500/20 rounded-2xl p-5.5 relative overflow-hidden">
+                <div className="absolute -right-10 -bottom-10 w-28 h-28 bg-indigo-500/10 rounded-full blur-2xl" />
+                <h3 className="text-white text-sm font-bold mb-2 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4.5 h-4.5 text-indigo-400" />
+                  Centralized Safety Boundary
+                </h3>
+                <p className="text-slate-400 text-xs mb-4.5 leading-relaxed">
+                  DASC operates a centralized validation boundary verifying agent intents using information flow control, optimistic concurrency version check verification, and custom policy rulesets.
+                </p>
+                <a 
+                  href="https://github.com/Anteneh-T-Tessema/dasc-core" 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="w-full bg-[#0d0d12]/80 hover:bg-[#0d0d12]/100 text-slate-200 text-xs font-bold py-2.5 rounded-xl transition-colors border border-slate-800/80 inline-flex items-center justify-center gap-1.5"
+                >
+                  Inspect Source Repository <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
             </div>
           </div>
-
-          {/* Sidebar / Active Escalations & Info */}
-          <div className="space-y-6">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2.5">
-              <AlertTriangle className="w-5 h-5 text-amber-400 animate-pulse" />
-              Pending Escalations
-            </h2>
-            
-            <div className="space-y-4">
-              {pendingEscalations.length === 0 && (
-                <div className="text-sm text-slate-500 italic p-8 border border-dashed border-slate-800 rounded-2xl text-center bg-[#0a0a0d]/40">
-                  No pending escalations requiring human oversight
-                </div>
-              )}
-              {pendingEscalations.map((item: any, i) => {
-                const intentPayload = parseJsonField(item.intent_json);
-                return (
-                  <div key={i} className="bg-[#0f0f13]/85 backdrop-blur-md border border-amber-500/25 rounded-2xl p-5.5 space-y-4 relative overflow-hidden group shadow-lg shadow-amber-500/3">
-                    <div className="absolute top-0 right-0 p-2.5 bg-amber-500/15 rounded-bl-2xl text-amber-400 border-l border-b border-amber-500/20">
-                      <AlertTriangle className="w-4 h-4" />
-                    </div>
-                    
-                    <div>
-                      <p className="text-[9px] uppercase tracking-[0.2em] text-amber-400 font-extrabold mb-1">Human Oversight Needed</p>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                        <Layers className="w-4 h-4 text-slate-400" />
-                        {intentPayload.action_type || 'ADMIN_ACTION'}
-                      </h3>
-                    </div>
-                    
-                    <div className="text-xs space-y-1.5 text-slate-400 bg-slate-950/60 p-3.5 rounded-xl font-mono border border-slate-850">
-                      <div><span className="text-indigo-400">intent_id:</span> "{item.intent_id}"</div>
-                      <div><span className="text-indigo-400">agent:</span> "{item.actor_agent}"</div>
-                      <div><span className="text-indigo-400">target:</span> "{intentPayload.target_artifact}"</div>
-                      {intentPayload.risk_tier && <div><span className="text-indigo-400">risk_tier:</span> {intentPayload.risk_tier}</div>}
-                    </div>
-
-                    <div className="flex gap-2.5 pt-1">
-                      <button 
-                        onClick={() => handleApproval(item.intent_id, true)}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:scale-97 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Check className="w-4 h-4" /> Approve
-                      </button>
-                      <button 
-                        onClick={() => handleApproval(item.intent_id, false)}
-                        className="flex-1 bg-rose-600 hover:bg-rose-500 active:scale-97 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-rose-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <X className="w-4 h-4" /> Deny
-                      </button>
-                    </div>
+        ) : (
+          /* Policies split */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+            {/* Active Policies List */}
+            <div className="lg:col-span-2 space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2.5">
+                  <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                  Active Safety Rules
+                </h2>
+                <span className="text-xs text-slate-500 font-medium">
+                  {policies.length} rules loaded
+                </span>
+              </div>
+              
+              <div className="space-y-4">
+                {policies.length === 0 ? (
+                  <div className="text-sm text-slate-500 italic p-12 border border-dashed border-slate-800 rounded-2xl text-center bg-[#0a0a0d]/40">
+                    No active rules found. Use the editor to add rules.
                   </div>
-                );
-              })}
+                ) : (
+                  policies.map((rule: any, i: number) => (
+                    <div key={i} className="bg-[#0f0f13]/80 backdrop-blur-md border border-slate-800/80 rounded-2xl p-5.5 space-y-3 hover:border-slate-700/60 transition-all">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <span className="text-slate-400 font-mono text-xs">#{i+1}</span>
+                          {rule.name}
+                        </h3>
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-wider uppercase border ${
+                          rule.action === 'COMMIT' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                          rule.action === 'REJECT' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                          'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
+                          {rule.action}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Rule Condition</span>
+                          <div className="bg-slate-950/60 border border-slate-850 p-2.5 rounded-xl text-xs font-mono text-indigo-400 break-all">
+                            {rule.condition}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Reason Code</span>
+                          <div className="bg-slate-950/60 border border-slate-850 p-2.5 rounded-xl text-xs font-mono text-slate-300 break-all">
+                            {rule.reason}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
-            {/* Quick Action Info Panel */}
-            <div className="bg-gradient-to-br from-indigo-950/30 to-indigo-900/15 border border-indigo-500/20 rounded-2xl p-5.5 relative overflow-hidden">
-              <div className="absolute -right-10 -bottom-10 w-28 h-28 bg-indigo-500/10 rounded-full blur-2xl" />
-              <h3 className="text-white text-sm font-bold mb-2 flex items-center gap-1.5">
-                <ShieldCheck className="w-4.5 h-4.5 text-indigo-400" />
-                Centralized Safety Boundary
-              </h3>
-              <p className="text-slate-400 text-xs mb-4.5 leading-relaxed">
-                DASC operates a centralized validation boundary verifying agent intents using information flow control, optimistic concurrency version check verification, and custom policy rulesets.
-              </p>
-              <a 
-                href="https://github.com/Anteneh-T-Tessema/dasc-core" 
-                target="_blank" 
-                rel="noreferrer" 
-                className="w-full bg-[#0d0d12]/80 hover:bg-[#0d0d12]/100 text-slate-200 text-xs font-bold py-2.5 rounded-xl transition-colors border border-slate-800/80 inline-flex items-center justify-center gap-1.5"
-              >
-                Inspect Source Repository <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+            {/* Sidebar / JSON Policy Editor */}
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2.5">
+                <FileJson className="w-5 h-5 text-indigo-400" />
+                Policy Editor
+              </h2>
+              
+              <div className="bg-[#0f0f13]/85 border border-slate-800/80 rounded-2xl p-5.5 space-y-4 shadow-xl">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 block">dasc_rules.json</label>
+                  <textarea
+                    value={policiesJson}
+                    onChange={(e) => setPoliciesJson(e.target.value)}
+                    rows={14}
+                    className="w-full bg-slate-950/80 text-indigo-300 font-mono text-xs p-4 rounded-xl border border-slate-800/80 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 outline-none resize-y"
+                  />
+                </div>
+
+                {policiesError && (
+                  <div className="bg-rose-500/5 border border-rose-500/20 text-rose-400 p-3.5 rounded-xl text-xs font-mono flex items-start gap-2">
+                    <span className="font-bold text-rose-500 mt-0.5">•</span>
+                    <span className="break-all">{policiesError}</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={savePolicies}
+                  disabled={saveStatus === 'saving'}
+                  className={`w-full font-bold py-3 px-4 rounded-xl text-xs transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer ${
+                    saveStatus === 'saving' ? 'bg-slate-805 text-slate-500' :
+                    saveStatus === 'success' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' :
+                    saveStatus === 'error' ? 'bg-rose-600 hover:bg-rose-500 text-white' :
+                    'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/10'
+                  }`}
+                >
+                  <Check className="w-4 h-4" />
+                  {saveStatus === 'saving' ? 'Saving policies...' :
+                   saveStatus === 'success' ? 'Policies Applied!' :
+                   saveStatus === 'error' ? 'Failed to Save' :
+                   'Save & Apply Policies'}
+                </button>
+              </div>
+
+              {/* Rule Templates Panel */}
+              <div className="bg-gradient-to-br from-indigo-950/30 to-indigo-900/15 border border-indigo-500/20 rounded-2xl p-5.5 relative overflow-hidden">
+                <h3 className="text-white text-sm font-bold mb-3 flex items-center gap-1.5">
+                  <Layers className="w-4.5 h-4.5 text-indigo-400" />
+                  Quick Templates
+                </h3>
+                <p className="text-slate-400 text-xs mb-4 leading-relaxed">
+                  Select a template to instantly append it to your policy configuration rules list.
+                </p>
+                
+                <div className="space-y-2">
+                  {[
+                    {
+                      name: 'Financial Spend Limit',
+                      desc: 'Blocks transaction amounts > 1000',
+                      rule: {
+                        name: "Financial Limit",
+                        condition: "payload.amount > 1000 and risk_tier < 3",
+                        action: "REJECT",
+                        reason: "SPENDING_LIMIT_EXCEEDED"
+                      }
+                    },
+                    {
+                      name: 'Command Injection Block',
+                      desc: 'Detects system command delimiters',
+                      rule: {
+                        name: "Prevent Command Injection",
+                        condition: "payload.command contains ';' or payload.command contains '|'",
+                        action: "REJECT",
+                        reason: "COMMAND_INJECTION_TAINT"
+                      }
+                    },
+                    {
+                      name: 'Sensitive Path Guardian',
+                      desc: 'Escalates read/write intents for specific folders',
+                      rule: {
+                        name: "Secure Path Check",
+                        condition: "payload.path contains '/etc' or payload.path contains '/root'",
+                        action: "ESCALATE",
+                        reason: "SECURE_SYSTEM_PATH_OVERSIGHT"
+                      }
+                    }
+                  ].map((tpl, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        try {
+                          const current = JSON.parse(policiesJson);
+                          const existingRules = current.rules || [];
+                          const updatedRules = [...existingRules, tpl.rule];
+                          setPoliciesJson(JSON.stringify({ rules: updatedRules }, null, 2));
+                        } catch {
+                          setPoliciesJson(JSON.stringify({ rules: [tpl.rule] }, null, 2));
+                        }
+                      }}
+                      className="w-full text-left bg-[#0d0d12]/75 hover:bg-[#0d0d12]/100 border border-slate-800/80 p-3 rounded-xl transition-all flex flex-col gap-0.5 group cursor-pointer hover:border-indigo-500/40"
+                    >
+                      <span className="text-slate-200 text-xs font-bold group-hover:text-indigo-400 transition-colors">{tpl.name}</span>
+                      <span className="text-slate-500 text-[10px]">{tpl.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Selected Record Inspection Modal/Overlay Panel */}
         {selectedRecord && (

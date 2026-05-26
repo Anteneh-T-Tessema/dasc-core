@@ -17,6 +17,9 @@ const fastify = Fastify({
   } 
 });
 
+import { DeclarativePolicyEngine } from "./policies/declarative.js";
+import * as fs from "fs";
+
 const kernel = new Kernel({ 
   "config.json": "v1.0.0",
   "dasc-node": "v1.0.0" 
@@ -26,6 +29,45 @@ const kernel = new Kernel({
 kernel.registerPolicy(cybersecurityPolicy);
 kernel.registerPolicy(financePolicy);
 kernel.registerPolicy(healthcarePolicy);
+
+// Declarative Policy Engine configuration
+const RULES_FILE = process.env.DASC_RULES_FILE || "dasc_rules.json";
+const declarativeEngine = new DeclarativePolicyEngine();
+
+if (fs.existsSync(RULES_FILE)) {
+  try {
+    declarativeEngine.loadRulesFromFile(RULES_FILE);
+    console.log(`[DASC] Loaded ${declarativeEngine.rules.length} declarative rules from ${RULES_FILE}`);
+  } catch (err: any) {
+    console.error(`[DASC] Error loading declarative rules: ${err.message}`);
+  }
+} else {
+  const defaultRules = {
+    rules: [
+      {
+        name: "Limit Big Spends",
+        condition: "payload.amount > 1000 and risk_tier < 3",
+        action: "REJECT",
+        reason: "TOO_EXPENSIVE"
+      },
+      {
+        name: "Nuke Command Verification",
+        condition: "action_type == 'NUKE'",
+        action: "ESCALATE",
+        reason: "NUKE_COMMAND_HITL"
+      }
+    ]
+  };
+  try {
+    fs.writeFileSync(RULES_FILE, JSON.stringify(defaultRules, null, 2), "utf-8");
+    declarativeEngine.loadRulesFromFile(RULES_FILE);
+    console.log(`[DASC] Created and loaded default rules at ${RULES_FILE}`);
+  } catch (err: any) {
+    console.error(`[DASC] Error writing default rules file: ${err.message}`);
+  }
+}
+
+kernel.registerPolicy(declarativeEngine.evaluatePolicies);
 
 await fastify.register(cors, {
   origin: true // In production, restrict this
@@ -158,6 +200,36 @@ fastify.get("/stats", async () => {
     escalations: history.filter(h => h.status === "ESCALATE").length,
     last_updated: new Date().toISOString()
   };
+});
+
+// GET /policies
+fastify.get("/policies", async () => {
+  return { rules: declarativeEngine.rules };
+});
+
+// POST /policies
+fastify.post("/policies", async (request, reply) => {
+  const rulesData = request.body as any;
+  if (!rulesData || !Array.isArray(rulesData.rules)) {
+    return reply.status(400).send({ error: "Invalid policies format: 'rules' list is required" });
+  }
+
+  for (const rule of rulesData.rules) {
+    if (!rule.name || !rule.condition || !rule.action || !rule.reason) {
+      return reply.status(400).send({ error: "Invalid rule structure. Each rule must have 'name', 'condition', 'action', and 'reason'" });
+    }
+    if (!["COMMIT", "REJECT", "ESCALATE"].includes(rule.action)) {
+      return reply.status(400).send({ error: "Invalid action. Must be one of COMMIT, REJECT, ESCALATE" });
+    }
+  }
+
+  try {
+    fs.writeFileSync(RULES_FILE, JSON.stringify(rulesData, null, 2), "utf-8");
+    declarativeEngine.loadRulesFromFile(RULES_FILE);
+    return { status: "success", rules: declarativeEngine.rules };
+  } catch (err: any) {
+    return reply.status(500).send({ error: `Failed to save policies: ${err.message}` });
+  }
 });
 
 const start = async () => {

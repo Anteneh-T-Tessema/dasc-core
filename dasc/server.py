@@ -61,11 +61,49 @@ else:
     print("[DASC] Using Local SQLite Ledger")
 
 from .policies import cybersecurity_policy, finance_policy, healthcare_policy
+from .policies.declarative import DeclarativePolicyEngine
 
 kernel = Kernel(current_state_versions={"config.json": "v1.0.0"})
 kernel.register_policy(cybersecurity_policy)
 kernel.register_policy(finance_policy)
 kernel.register_policy(healthcare_policy)
+
+# Declarative Policy Engine configuration
+RULES_FILE = os.getenv("DASC_RULES_FILE", "dasc_rules.json")
+declarative_engine = DeclarativePolicyEngine()
+
+if os.path.exists(RULES_FILE):
+    try:
+        declarative_engine.load_rules_from_file(RULES_FILE)
+        print(f"[DASC] Loaded {len(declarative_engine.rules)} declarative rules from {RULES_FILE}")
+    except Exception as e:
+        print(f"[DASC] Error loading declarative rules: {e}")
+else:
+    default_rules = {
+        "rules": [
+            {
+                "name": "Limit Big Spends",
+                "condition": "payload.amount > 1000 and risk_tier < 3",
+                "action": "REJECT",
+                "reason": "TOO_EXPENSIVE"
+            },
+            {
+                "name": "Nuke Command Verification",
+                "condition": "action_type == 'NUKE'",
+                "action": "ESCALATE",
+                "reason": "NUKE_COMMAND_HITL"
+            }
+        ]
+    }
+    try:
+        with open(RULES_FILE, "w") as f:
+            json.dump(default_rules, f, indent=2)
+        declarative_engine.load_rules_from_file(RULES_FILE)
+        print(f"[DASC] Created and loaded default rules at {RULES_FILE}")
+    except Exception as e:
+        print(f"[DASC] Error writing default rules file: {e}")
+
+kernel.register_policy(declarative_engine.evaluate_policies)
 
 class HITLApproval(BaseModel):
     intent_id: str
@@ -197,6 +235,32 @@ def get_stats():
         "rejections": len([i for i in history if i["status"] == "REJECT"]),
         "escalations": len([i for i in history if i["status"] == "ESCALATE"]),
     }
+
+@app.get("/policies", dependencies=[Depends(get_api_key)])
+def get_policies():
+    """Returns the current list of active declarative rules."""
+    return {"rules": declarative_engine.rules}
+
+@app.post("/policies", dependencies=[Depends(get_api_key)])
+def update_policies(rules_data: dict):
+    """Updates the declarative rules config file and reloads it dynamically."""
+    if "rules" not in rules_data or not isinstance(rules_data["rules"], list):
+        raise HTTPException(status_code=400, detail="Invalid policies format: 'rules' list is required")
+    
+    # Validation
+    for rule in rules_data["rules"]:
+        if not isinstance(rule, dict) or "name" not in rule or "condition" not in rule or "action" not in rule or "reason" not in rule:
+            raise HTTPException(status_code=400, detail="Invalid rule structure: name, condition, action, and reason are required")
+        if rule["action"] not in ["COMMIT", "REJECT", "ESCALATE"]:
+            raise HTTPException(status_code=400, detail="Invalid action: must be one of COMMIT, REJECT, ESCALATE")
+            
+    try:
+        with open(RULES_FILE, "w") as f:
+            json.dump(rules_data, f, indent=2)
+        declarative_engine.load_rules_from_file(RULES_FILE)
+        return {"status": "success", "rules": declarative_engine.rules}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update rules: {str(e)}")
 
 # Serve static dashboard files if they exist in the package
 from fastapi.staticfiles import StaticFiles

@@ -1,0 +1,16 @@
+{
+  "rules": [
+    {
+      "name": "Limit Big Spends",
+      "condition": "payload.amount > 1000 and risk_tier < 3",
+      "action": "REJECT",
+      "reason": "TOO_EXPENSIVE"
+    },
+    {
+      "name": "Nuke Command Verification",
+      "condition": "action_type == 'NUKE'",
+      "action": "ESCALATE",
+      "reason": "NUKE_COMMAND_HITL"
+    }
+  ]
+}
