@@ -1,23 +1,32 @@
+version: '3.8'
+
 services:
-  dasc-server:
-    build:
-      context: ./dasc-node
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./dasc-node/dasc_ledger_node.db:/app/dasc_ledger_node.db
+  dasc-db:
+    image: postgres:15-alpine
+    container_name: dasc-db
     environment:
-      - NODE_ENV=production
+      POSTGRES_USER: dasc_admin
+      POSTGRES_PASSWORD: dasc_secure_pwd_123
+      POSTGRES_DB: dasc_ledger
+    volumes:
+      - dasc_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: always
 
-  dasc-dashboard:
+  dasc-server:
     build:
-      context: ./dashboard
+      context: .
+      dockerfile: Dockerfile
+    container_name: dasc-server
     ports:
-      - "3001:3000"
+      - "8000:8000"
     environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:3000
+      - DATABASE_URL=postgresql://dasc_admin:dasc_secure_pwd_123@dasc-db:5432/dasc_ledger
+      - DASC_MASTER_KEY=dasc-dev-key-123
     depends_on:
-      - dasc-server
+      - dasc-db
     restart: always
+
+volumes:
+  dasc_db_data:
