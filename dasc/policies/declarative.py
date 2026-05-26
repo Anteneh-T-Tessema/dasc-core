@@ -72,7 +72,7 @@ def evaluate_comparison(left, op: str, right_str: str) -> bool:
     elif op == "in":
         # right could be a comma-separated string or list representation
         if isinstance(right, str):
-            items = [item.strip() for item in right.replace("[", "").replace("]", "").split(",")]
+            items = [item.strip().strip("'").strip('"') for item in right.replace("[", "").replace("]", "").split(",")]
             return str(left) in items
         return left in right
     return False

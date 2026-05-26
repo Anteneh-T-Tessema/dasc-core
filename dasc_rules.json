@@ -1,16 +1,28 @@
 {
   "rules": [
     {
-      "name": "Limit Big Spends",
-      "condition": "payload.amount > 1000 and risk_tier < 3",
+      "name": "HIPAA PHI Access Gate",
+      "condition": "payload.has_phi == true and payload.break_glass_authorized == false",
       "action": "REJECT",
-      "reason": "TOO_EXPENSIVE"
+      "reason": "HIPAA_VIOLATION: Unauthorized PHI access attempt"
     },
     {
-      "name": "Nuke Command Verification",
-      "condition": "action_type == 'NUKE'",
+      "name": "GDPR Location Sovereignty",
+      "condition": "payload.user_residency == 'EU' and payload.target_region != 'EU'",
+      "action": "REJECT",
+      "reason": "GDPR_VIOLATION: EU user data must remain in EU region"
+    },
+    {
+      "name": "ISO 42001 AI human gate",
+      "condition": "risk_tier >= 3 and payload.human_supervisor_present == false",
       "action": "ESCALATE",
-      "reason": "NUKE_COMMAND_HITL"
+      "reason": "ISO_42001_COMPLIANCE: High-risk AI actions require human oversight"
+    },
+    {
+      "name": "ISO 27001 Access control",
+      "condition": "action_type in ['write_config', 'delete_backup'] and actor_agent != 'admin-agent'",
+      "action": "REJECT",
+      "reason": "ISO_27001_CONTROL_A9: Unauthorized system modification blocked"
     }
   ]
 }

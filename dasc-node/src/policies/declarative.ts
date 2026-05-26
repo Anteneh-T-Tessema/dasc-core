@@ -64,7 +64,7 @@ function evaluateComparison(left: any, op: string, rightStr: string): boolean {
           .replace("[", "")
           .replace("]", "")
           .split(",")
-          .map((item) => item.trim());
+          .map((item) => item.trim().replace(/^['"]|['"]$/g, ""));
         return items.includes(String(leftVal));
       }
       if (Array.isArray(rightVal)) {
