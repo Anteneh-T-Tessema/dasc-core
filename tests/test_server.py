@@ -100,3 +100,50 @@ def test_auth_failure():
     # Invalid key
     response = client.get("/policies", headers={"X-API-KEY": "wrong-key"})
     assert response.status_code == 403
+
+def test_evaluate_policies_with_list_membership():
+    client = TestClient(app)
+    headers = {"X-API-KEY": "dasc-dev-key-123"}
+    
+    # 1. Update safety rules to include list membership with single/double quotes
+    list_rules = {
+        "rules": [
+            {
+                "name": "Block Admin Config Operations",
+                "condition": "action_type in ['write_config', 'delete_config'] and actor_agent != 'admin-agent'",
+                "action": "REJECT",
+                "reason": "ADMIN_OPERATION_FORBIDDEN"
+            }
+        ]
+    }
+    res_rules = client.post("/policies", headers=headers, json=list_rules)
+    assert res_rules.status_code == 200
+    
+    # 2. Evaluate intent matching condition (should REJECT)
+    intent_rejected = {
+        "intent_id": "test-rejected-list",
+        "actor_agent": "junior-bot",
+        "action_type": "write_config",
+        "target_artifact": "config.json",
+        "risk_tier": 2,
+        "payload": {},
+        "evidence": []
+    }
+    res_eval1 = client.post("/evaluate", headers=headers, json=intent_rejected)
+    assert res_eval1.status_code == 200
+    assert res_eval1.json()["status"] == "REJECT"
+    assert "ADMIN_OPERATION_FORBIDDEN" in res_eval1.json()["reason_codes"][0]
+
+    # 3. Evaluate intent not matching condition (should COMMIT)
+    intent_allowed = {
+        "intent_id": "test-allowed-list",
+        "actor_agent": "admin-agent",
+        "action_type": "write_config",
+        "target_artifact": "config.json",
+        "risk_tier": 2,
+        "payload": {},
+        "evidence": []
+    }
+    res_eval2 = client.post("/evaluate", headers=headers, json=intent_allowed)
+    assert res_eval2.status_code == 200
+    assert res_eval2.json()["status"] == "COMMIT"
