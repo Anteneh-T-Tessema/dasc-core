@@ -115,6 +115,25 @@ def main():
             doc = policy.__doc__.strip() if policy.__doc__ else "No documentation provided."
             print(f"Description:\n{doc}")
             print("=" * 80)
+            
+        # Load and print declarative policies if file exists
+        RULES_FILE = os.getenv("DASC_RULES_FILE", "dasc_rules.json")
+        if os.path.exists(RULES_FILE):
+            try:
+                with open(RULES_FILE, "r") as f:
+                    rules_data = json.load(f)
+                rules = rules_data.get("rules", [])
+                if rules:
+                    print(f"\nDeclarative Rules Loaded from '{RULES_FILE}':")
+                    print("=" * 80)
+                    for idx, rule in enumerate(rules, 1):
+                        print(f"Rule #{idx}: {rule.get('name', 'Unnamed')}")
+                        print(f"  Condition: {rule.get('condition')}")
+                        print(f"  Action:    {rule.get('action')}")
+                        print(f"  Reason:    {rule.get('reason')}")
+                        print("=" * 80)
+            except Exception as e:
+                print(f"\nError reading declarative policies from '{RULES_FILE}': {e}")
         print()
 
     else:
