@@ -1,6 +1,7 @@
 import json
 import logging
-from sqlalchemy import create_all, Column, Integer, String, Text, create_engine
+from typing import Optional
+from sqlalchemy import Column, Integer, String, Text, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .schemas import Intent, Decision
 from .sanitizer import sanitize_content
@@ -59,6 +60,26 @@ class PostgresLedger:
     def get_history(self, namespace: Optional[str] = None):
         with self.Session() as session:
             query = session.query(DecisionRecord)
+            if namespace:
+                query = query.filter_by(namespace=namespace)
+            rows = query.order_by(DecisionRecord.id.desc()).all()
+            return [
+                {
+                    "namespace": r.namespace,
+                    "intent_id": r.intent_id,
+                    "actor_agent": r.actor_agent,
+                    "status": r.status,
+                    "reason_codes": json.loads(r.reason_codes),
+                    "intent_json": r.intent_json,
+                    "timestamp": r.timestamp,
+                    "previous_hash": r.previous_hash,
+                    "record_hash": r.record_hash
+                } for r in rows
+            ]
+
+    def get_history_as_of(self, timestamp: str, namespace: Optional[str] = None):
+        with self.Session() as session:
+            query = session.query(DecisionRecord).filter(DecisionRecord.timestamp <= timestamp)
             if namespace:
                 query = query.filter_by(namespace=namespace)
             rows = query.order_by(DecisionRecord.id.desc()).all()

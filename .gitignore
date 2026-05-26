@@ -149,3 +149,9 @@ cython_debug/
 # DASC specific
 dasc_ledger.db
 dasc_ledger.db-journal
+
+# Node.js and Next.js build assets
+node_modules/
+.next/
+dashboard/out/
+.DS_Store

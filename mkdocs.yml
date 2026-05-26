@@ -1,0 +1,50 @@
+site_name: DASC-Core
+site_description: Deterministic Agentic Swarm Control Middleware
+site_author: Anteneh T. Tessema
+site_url: https://anteneh-t-tessema.github.io/dasc-core/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+plugins:
+  - search
+  - mermaid2:
+      version: 10.9.1
+
+nav:
+  - Home: index.md
+  - Architecture: ARCHITECTURE.md
+  - Academic Paper: DASC_Academic_Paper.md
+  - API Reference: api.md
+
+repo_name: Anteneh-T-Tessema/dasc-core
+repo_url: https://github.com/Anteneh-T-Tessema/dasc-core

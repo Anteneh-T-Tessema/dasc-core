@@ -24,6 +24,14 @@ def main():
     verify_parser.add_argument("intent_file", help="Path to intent.json")
     verify_parser.add_argument("--state", help="JSON string of current state versions (optional)")
 
+    # Serve Control Plane
+    serve_parser = subparsers.add_parser("serve", help="Start the FastAPI DASC Control Plane server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Host address to bind the server to")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Port to listen on")
+
+    # List Policies
+    subparsers.add_parser("policies", help="List all registered/prebuilt DASC safety policies")
+
     args = parser.parse_args()
 
     if args.command == "inspect":
@@ -65,6 +73,27 @@ def main():
         except Exception as e:
             print(f"Error: {str(e)}")
             sys.exit(1)
+
+    elif args.command == "serve":
+        try:
+            import uvicorn
+            from .server import app
+            print(f"Starting DASC FastAPI server on {args.host}:{args.port}...")
+            uvicorn.run(app, host=args.host, port=args.port)
+        except Exception as e:
+            print(f"Error starting server: {str(e)}")
+            sys.exit(1)
+
+    elif args.command == "policies":
+        from .policies import cybersecurity_policy, finance_policy, healthcare_policy
+        print("\nPrebuilt DASC Safety Policies:")
+        print("=" * 80)
+        for policy in [cybersecurity_policy, finance_policy, healthcare_policy]:
+            print(f"Policy Name: {policy.__name__}")
+            doc = policy.__doc__.strip() if policy.__doc__ else "No documentation provided."
+            print(f"Description:\n{doc}")
+            print("=" * 80)
+        print()
 
     else:
         parser.print_help()

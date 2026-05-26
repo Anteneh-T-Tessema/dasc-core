@@ -1,83 +1,168 @@
-# DASC-Core
+# DASC-Core: Deterministic Agentic Swarm Control
 
-DASC (Deterministic Agentic Safety Controller) is an open-source middleware designed to intercept outputs from AI orchestration frameworks (like LangGraph, AutoGen, and CrewAI) and enforce deterministic safety checks before actions are committed.
+**The Safety Boundary for Probabilistic Intelligence.**
 
-## The Paradigm: Cognitive Fault vs. Committed Fault
+DASC is a high-performance, multi-language middleware designed to prevent AI hallucinations from becoming real-world disasters. It intercepts agent intents and enforces deterministic safety checks before any action is committed to your authoritative systems.
 
-DASC operates on the principle that AI agents *will* fail. These are **Cognitive Faults** (hallucinations, logic errors). Our goal is to prevent these from becoming **Committed Faults** (actual state changes). DASC provides the deterministic boundary where these faults are intercepted.
+---
 
-## Installation
+## 🏗️ Architecture & Positioning
 
+DASC introduces a **Commitment Boundary** that separates the probabilistic reasoning of LLMs from the authoritative state of your databases, file systems, and APIs.
+
+```mermaid
+graph TD
+    subgraph "Probabilistic Layer (AI Reasoning)"
+        A[LangGraph / CrewAI / AutoGen Agent]
+    end
+
+    subgraph "DASC Safety Layer (Deterministic Control)"
+        B[DASC Client / Adapter] -->|Submit Intent| C[DASC Safety Kernel (FastAPI / Express)]
+        C -->|1. Validate Schema| D[Pipeline]
+        C -->|2. IFC Taint Check| D
+        C -->|3. Semantic OCC| D
+        C -->|4. Policy Evaluation| D
+        C -->|Log Decision| E[(Hash-Chained Ledger)]
+    end
+
+    subgraph "Authoritative Layer (Committed Actions)"
+        D -->|COMMIT| F[(Database / API / Shell)]
+        D -->|REJECT| A
+        D -->|ESCALATE| G[Control Plane Dashboard]
+        G -->|HITL Approval/Deny| C
+    end
+```
+
+---
+
+## 🔄 Interaction Workflow
+
+The sequence below illustrates how an intent is evaluated, handled, logged, and escalated dynamically:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent as Agent Swarm
+    participant DASC as DASC Kernel
+    participant Ledger as Bitemporal Ledger
+    participant System as System State
+    participant Admin as HITL Dashboard
+
+    Agent->>DASC: Submit Intent (Risk Tier 1-4, payload, versions)
+    Note over DASC: Evaluates IFC, OCC, & Rules
+    
+    alt Safety Checks Fail (REJECT)
+        DASC->>Ledger: Log REJECT decision & hash record
+        DASC->>Agent: Deny Action (Reason & Suggestions)
+    else High Risk (Tier 4) (ESCALATE)
+        DASC->>Ledger: Log ESCALATE status
+        DASC->>Admin: Stream escalation via WebSockets
+        Admin->>DASC: Manual Approve / Deny
+        DASC->>Ledger: Log final COMMIT / REJECT
+        DASC->>Agent: Return final decision status
+    else Safety Checks Pass (COMMIT)
+        DASC->>Ledger: Log COMMIT decision & hash record
+        DASC->>System: Authorize Execution
+        DASC->>Agent: Return COMMIT (Success)
+    end
+```
+
+---
+
+## 📦 Distribution
+
+### Node.js (Official SDK)
+[![npm version](https://img.shields.io/npm/v/@antenehtessema/dasc-core.svg)](https://www.npmjs.com/package/@antenehtessema/dasc-core)
+```bash
+npm install @antenehtessema/dasc-core
+```
+
+### Python (Core Middleware)
 ```bash
 pip install dasc-core
 ```
 
-## Features
+---
 
-- **LangChain/LangGraph Integration**: Use `DASCCommitTool` to wrap agent actions.
-- **AutoGen Support**: Use `DASCGatekeeper` to intercept and validate function calls.
-- **Semantic OCC (Hashing)**: Use `hash:<sha256>` in version vectors for automatic file content verification.
-- **Structured Observability**: Built-in logging with detailed evaluation stages.
-- **Programmable Rejections**: Custom exceptions (`OCCConflictError`, etc.) for robust error handling.
-- **Bitemporal SQLite Ledger**: Persistent audit log of every decision.
+## 🚀 Native Framework Integrations
 
-## Quick Start
+DASC provides plug-and-play adapters to secure popular orchestration platforms:
 
-### Using the Kernel with Exceptions
-
+### 1. LangGraph (Python)
+Integrate safety nodes and bitemporal checkpointers directly in your graphs:
 ```python
-from dasc.kernel import Kernel
-from dasc.exceptions import OCCConflictError
+from langgraph.graph import StateGraph
+from dasc import Kernel
+from dasc_langgraph import DASCLangGraphAdapter, DASCLangGraphCheckpointer
 
 kernel = Kernel()
+adapter = DASCLangGraphAdapter(kernel)
+checkpointer = DASCLangGraphCheckpointer()
 
-try:
-    kernel.evaluate(intent, raise_on_failure=True)
-except OCCConflictError:
-    # Trigger agent retry or state refresh logic
-    pass
+# Define graph and inject DASC
+workflow = StateGraph(AgentState)
+workflow.add_node("safety_gate", adapter.safety_node)
+workflow.set_entry_point("safety_gate")
+
+workflow.add_conditional_edges(
+    "safety_gate",
+    adapter.route_decision,
+    {
+        "authorized": "execute_node",
+        "human_gate": "escalation_node",
+        "rejected": "rejection_node"
+    }
+)
+app = workflow.compile(checkpointer=checkpointer)
 ```
 
-### Using Semantic OCC (Hashing)
-
+### 2. CrewAI (Python)
+Intercept and validate Crew task outputs before they are committed:
 ```python
-from dasc.utils import calculate_file_hash
+from crewai import Agent
+from dasc import Kernel
+from dasc.adapters.crewai import CrewDASCConnector
 
-file_hash = calculate_file_hash("data.json")
-intent = Intent(
-    ...,
-    state_version_vector={"data.json": f"hash:{file_hash}"}
+kernel = Kernel()
+safety_tool = CrewDASCConnector(kernel=kernel)
+
+agent = Agent(
+    role="Database Executor",
+    goal="Safely perform operations on the user database",
+    tools=[safety_tool],
+    verbose=True
 )
 ```
 
-## Documentation
+---
 
-- **Visual Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Detailed Mermaid diagrams of the DASC logic flow.
-- **Research Paper (PDF)**: [docs/DASC_Academic_Paper.pdf](docs/DASC_Academic_Paper.pdf)
-- **Technical Overview**: [docs/DASC_Academic_Paper.md](docs/DASC_Academic_Paper.md)
+## 🛡️ Core Safety Pipelines
 
-## DASC CLI
+1.  **IFC / Taint Check**: Intercepts untrusted data flows. If an intent is proposed with an `untrusted` evidence source at `Risk Tier >= 2`, it blocks it from executing.
+2.  **Semantic Optimistic Concurrency Control (OCC)**: Performs TOCTOU checks using state version vectors or file hashes. If target artifacts drift between reasoning and execution, DASC rejects the write.
+3.  **Declarative JSON Rules**: Prebuilt or custom policies configured via simple rule JSON files (e.g. Cybersecurity command injection detection, Finance spending limits, or Healthcare HIPAA checks).
+4.  **Bitemporal Ledgers**: Logs all committed and rejected intents in a hash-chained, tamper-evident SQLite/PostgreSQL database for immutable compliance auditing.
 
-The project includes a command-line tool for inspecting the ledger and generating hashes:
+---
 
+## 🖥️ Control Plane Console
+
+DASC includes a self-contained Next.js control plane interface. When you install `dasc-core` via `pip`, the compiled static dashboard is bundled and hosted directly by the FastAPI server.
+
+To start the Control Plane (API & Dashboard):
 ```bash
-# View the last 10 decisions
-dasc inspect
-
-# Generate a hash for a file for OCC
-dasc hash my_data.csv
-
-# Verify a JSON intent manually
-dasc verify intent.json --state '{"my_data.csv": "v1.0"}'
+dasc serve --port 8000
 ```
+Then simply open your browser and navigate to:
+👉 **`http://localhost:8000`**
 
-## Examples
+### Console Features:
+*   **Bidirectional WebSockets**: Stream agent requests and decisions in real-time.
+*   **Bitemporal Time Travel**: A history debugger datetime slider to inspect prior system state baselines.
+*   **Human-In-The-Loop (HITL)**: Instant administrative approve/deny controls for escalated intents.
+*   **Audit Chain Integrity**: Perform one-click verification of the ledger's cryptographic hash chain.
 
-Run the production features demo:
-```bash
-python -m examples.production_features
-```
+---
 
-## License
-
-MIT
+## ⚖️ License
+MIT © 2026 Anteneh T. Tessema

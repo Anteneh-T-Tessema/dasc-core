@@ -1,0 +1,7 @@
+{
+  "IFC_TAINT_DETECTED": "Fuente de evidencia no confiable detectada para acción de alto riesgo.",
+  "OCC_CONFLICT": "Conflicto de concurrencia detectado. El estado del mundo ha cambiado.",
+  "MISSING_COMPENSATION_PLAN": "La acción de alto riesgo requiere un plan de compensación (deshacer).",
+  "TIER_4_MANDATORY_ESCALATION": "El Nivel de Riesgo 4 requiere aprobación humana obligatoria.",
+  "CUSTOM_POLICY_VIOLATION": "Violación de política de seguridad personalizada: {reason}"
+}

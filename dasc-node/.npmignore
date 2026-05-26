@@ -1,0 +1,4 @@
+tests/
+dasc_ledger_node.db
+Dockerfile
+.github/

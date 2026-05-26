@@ -26,7 +26,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["dasc", "dasc.adapters"]
+packages = ["dasc", "dasc.adapters", "dasc.policies"]
+
+[tool.setuptools.package-data]
+dasc = ["dashboard/**/*", "dashboard/*"]
 
 [project.urls]
 "Homepage" = "https://github.com/Anteneh-T-Tessema/dasc-core"

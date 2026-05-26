@@ -1,0 +1,43 @@
+name: DASC Node.js CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'dasc-node/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'dasc-node/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: dasc-node/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd dasc-node
+        npm ci
+        
+    - name: Build
+      run: |
+        cd dasc-node
+        npx tsc
+        
+    - name: Run Demo
+      run: |
+        cd dasc-node
+        npm start

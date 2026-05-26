@@ -1,0 +1,7 @@
+{
+  "IFC_TAINT_DETECTED": "Untrusted evidence source detected for high-risk action.",
+  "OCC_CONFLICT": "Stale world state detected. The environment has changed since reasoning started.",
+  "MISSING_COMPENSATION_PLAN": "High-risk action requires a compensation (undo) plan.",
+  "TIER_4_MANDATORY_ESCALATION": "Risk Tier 4 requires mandatory human-in-the-loop approval.",
+  "CUSTOM_POLICY_VIOLATION": "Custom industry safety policy violation: {reason}"
+}

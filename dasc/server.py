@@ -10,13 +10,33 @@ from .schemas import Decision, Intent
 import os
 from .persistence import PostgresLedger
 
-from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi import FastAPI, HTTPException, Depends, Security, WebSocket, WebSocketDisconnect
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from .persistence import PostgresLedger
 from .webhooks import NotificationManager
 
 app = FastAPI(title="DASC Control Plane")
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# WebSocket active connection pool
+active_connections: List[WebSocket] = []
+
+async def broadcast_update(message: dict):
+    for connection in active_connections:
+        try:
+            await connection.send_json(message)
+        except Exception:
+            pass
 
 # Notification Configuration
 notifier = NotificationManager(os.getenv("SLACK_WEBHOOK_URL"))
@@ -40,7 +60,12 @@ else:
     ledger = BitemporalLedger()
     print("[DASC] Using Local SQLite Ledger")
 
-kernel = Kernel()
+from .policies import cybersecurity_policy, finance_policy, healthcare_policy
+
+kernel = Kernel(current_state_versions={"config.json": "v1.0.0"})
+kernel.register_policy(cybersecurity_policy)
+kernel.register_policy(finance_policy)
+kernel.register_policy(healthcare_policy)
 
 class HITLApproval(BaseModel):
     intent_id: str
@@ -49,8 +74,12 @@ class HITLApproval(BaseModel):
     comments: Optional[str] = None
 
 @app.get("/ledger", dependencies=[Depends(get_api_key)])
-def get_ledger(limit: int = 50):
+def get_ledger(limit: int = 50, as_of: Optional[str] = None):
     """Returns the bitemporal ledger history."""
+    if as_of:
+        # Check if get_history_as_of is implemented, otherwise fallback
+        if hasattr(ledger, "get_history_as_of"):
+            return ledger.get_history_as_of(as_of)[:limit]
     return ledger.get_history()[:limit]
 
 @app.get("/integrity", dependencies=[Depends(get_api_key)])
@@ -60,10 +89,10 @@ def check_integrity():
     return {"status": "intact" if is_intact else "compromised", "valid": is_intact}
 
 @app.post("/approve", dependencies=[Depends(get_api_key)])
-def approve_intent(approval: HITLApproval):
+async def approve_intent(approval: HITLApproval):
     """
     Manually approves or rejects an escalated intent.
-    In a real system, this would update the state and record a new decision.
+    Records the manual decision in the ledger and broadcasts it.
     """
     history = ledger.get_history()
     target = next((item for item in history if item["intent_id"] == approval.intent_id), None)
@@ -74,26 +103,89 @@ def approve_intent(approval: HITLApproval):
     if target["status"] != "ESCALATE":
         raise HTTPException(status_code=400, detail="Only escalated intents can be manually approved")
     
-    # Record the manual decision
-    # We'll create a new commitment representing the human approval
     new_status = "COMMIT" if approval.approved else "REJECT"
     print(f"[HITL] Intent {approval.intent_id} {new_status} by {approval.approver_id}")
+    
+    # Save decision in bitemporal ledger
+    intent_dict = json.loads(target["intent_json"])
+    intent = Intent(**intent_dict)
+    decision = Decision(
+        intent_id=approval.intent_id,
+        status=new_status,
+        reason_codes=[f"MANUAL_{new_status}_BY_{approval.approver_id}"],
+        suggestions=[]
+    )
+    ledger.log_decision(intent, decision)
+    
+    # Broadcast HITL update to dashboard
+    await broadcast_update({
+        "type": "DECISION_UPDATED",
+        "intent_id": approval.intent_id,
+        "status": new_status,
+        "decision": decision.model_dump()
+    })
     
     return {"status": "success", "new_status": new_status}
 
 @app.post("/evaluate", response_model=Decision, dependencies=[Depends(get_api_key)])
-def evaluate_intent(intent: Intent):
+async def evaluate_intent(intent: Intent):
     """
     Remote endpoint for distributed agents to submit intents 
     to the centralized DASC Safety Boundary.
     """
     decision = kernel.evaluate(intent)
     
+    # Broadcast evaluation to WebSocket clients
+    await broadcast_update({
+        "type": "INTENT_EVALUATED",
+        "intent": intent.model_dump(),
+        "decision": decision.model_dump()
+    })
+    
     # Trigger active alerting for sensitive events
     if decision.status != "COMMIT":
         notifier.notify(intent, decision)
         
     return decision
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        while True:
+            # Keep connection open and accept inbound messages
+            data = await websocket.receive_json()
+            if data.get("type") in ["APPROVE", "DENY"]:
+                intent_id = data.get("intent_id")
+                approved = data.get("type") == "APPROVE"
+                approver = data.get("approver", "DASC_ADMIN_WS")
+                
+                history = ledger.get_history()
+                target = next((item for item in history if item["intent_id"] == intent_id), None)
+                if target and target["status"] == "ESCALATE":
+                    new_status = "COMMIT" if approved else "REJECT"
+                    intent_dict = json.loads(target["intent_json"])
+                    intent = Intent(**intent_dict)
+                    decision = Decision(
+                        intent_id=intent_id,
+                        status=new_status,
+                        reason_codes=[f"MANUAL_{new_status}_BY_{approver}"],
+                        suggestions=[]
+                    )
+                    ledger.log_decision(intent, decision)
+                    await broadcast_update({
+                        "type": "DECISION_UPDATED",
+                        "intent_id": intent_id,
+                        "status": new_status,
+                        "decision": decision.model_dump()
+                    })
+    except WebSocketDisconnect:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+    except Exception:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 @app.get("/stats", dependencies=[Depends(get_api_key)])
 def get_stats():
@@ -105,3 +197,10 @@ def get_stats():
         "rejections": len([i for i in history if i["status"] == "REJECT"]),
         "escalations": len([i for i in history if i["status"] == "ESCALATE"]),
     }
+
+# Serve static dashboard files if they exist in the package
+from fastapi.staticfiles import StaticFiles
+dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard")
+if os.path.exists(dashboard_path):
+    app.mount("/", StaticFiles(directory=dashboard_path, html=True), name="dashboard")
+

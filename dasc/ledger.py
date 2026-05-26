@@ -88,3 +88,9 @@ class BitemporalLedger:
             cursor = conn.execute("SELECT * FROM decisions ORDER BY timestamp DESC")
             columns = [column[0] for column in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def get_history_as_of(self, timestamp: str):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT * FROM decisions WHERE timestamp <= ? ORDER BY timestamp DESC", (timestamp,))
+            columns = [column[0] for column in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]

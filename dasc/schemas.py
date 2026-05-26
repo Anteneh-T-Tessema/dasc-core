@@ -22,6 +22,9 @@ class Intent(BaseModel):
     
     # Non-idempotent action fallback
     compensation_plan: Optional[Dict[str, str]] = None
+    
+    # Arbitrary payload content for rule/policy checks
+    payload: Optional[Any] = None
 
 class Decision(BaseModel):
     intent_id: str
